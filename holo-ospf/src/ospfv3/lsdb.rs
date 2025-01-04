@@ -37,8 +37,8 @@ use crate::packet::lsa::{
 };
 use crate::packet::tlv::{
     BierEncapId, BierEncapSubSubTlv, BierSubSubTlv, BierSubTlv, PrefixSidFlags,
-    RouterInfoCaps, RouterInfoCapsTlv, SidLabelRangeTlv, SrAlgoTlv,
-    SrLocalBlockTlv,
+    RouterInfoCaps, RouterInfoCapsTlv, RouterInfoDynamicHostnameTlv,
+    SidLabelRangeTlv, SrAlgoTlv, SrLocalBlockTlv,
 };
 use crate::route::{SummaryNet, SummaryNetFlags, SummaryRtr};
 use crate::version::Ospfv3;
@@ -279,6 +279,12 @@ impl LsdbVersion<Self> for Ospfv3 {
                             }
                         }
                     }
+                }
+            }
+            LsaOriginateEvent::HostnameChange => {
+                // (Re)originate Router-LSA(s) in all areas.
+                for area in arenas.areas.iter() {
+                    lsa_orig_router(area, instance, arenas);
                 }
             }
             LsaOriginateEvent::BierEnableChange => {
@@ -1074,6 +1080,13 @@ fn lsa_orig_router_info(
         srlb,
         msds: None,
         srms_pref: None,
+        info_hostname: Some(RouterInfoDynamicHostnameTlv::new(
+            instance
+                .shared
+                .hostname
+                .clone()
+                .unwrap_or_else(|| "default_hostname".to_string()),
+        )),
         unknown_tlvs: vec![],
     });
     instance

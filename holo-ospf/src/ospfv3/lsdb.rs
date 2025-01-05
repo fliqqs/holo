@@ -36,8 +36,8 @@ use crate::packet::lsa::{
     Lsa, LsaHdrVersion, LsaKey, LsaScope, LsaTypeVersion, PrefixSidVersion,
 };
 use crate::packet::tlv::{
-    BierEncapId, BierEncapSubSubTlv, BierSubSubTlv, BierSubTlv, PrefixSidFlags,
-    RouterInfoCaps, RouterInfoCapsTlv, RouterInfoDynamicHostnameTlv,
+    BierEncapId, BierEncapSubSubTlv, BierSubSubTlv, BierSubTlv,
+    DynamicHostnameTlv, PrefixSidFlags, RouterInfoCaps, RouterInfoCapsTlv,
     SidLabelRangeTlv, SrAlgoTlv, SrLocalBlockTlv,
 };
 use crate::route::{SummaryNet, SummaryNetFlags, SummaryRtr};
@@ -1080,13 +1080,11 @@ fn lsa_orig_router_info(
         srlb,
         msds: None,
         srms_pref: None,
-        info_hostname: Some(RouterInfoDynamicHostnameTlv::new(
-            instance
-                .shared
-                .hostname
-                .clone()
-                .unwrap_or_else(|| "default_hostname".to_string()),
-        )),
+        info_hostname: instance
+            .shared
+            .hostname
+            .as_ref()
+            .map(|hostname| DynamicHostnameTlv::new(hostname.to_string())),
         unknown_tlvs: vec![],
     });
     instance

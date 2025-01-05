@@ -126,7 +126,7 @@ pub struct RouterFuncCapsTlv(RouterFuncCaps);
 //
 #[derive(Clone, Debug, Default, Eq, new, PartialEq)]
 #[derive(Deserialize, Serialize)]
-pub struct RouterInfoDynamicHostnameTlv {
+pub struct DynamicHostnameTlv {
     pub hostname: String,
 }
 
@@ -556,7 +556,7 @@ impl From<RouterFuncCaps> for RouterFuncCapsTlv {
 
 // ===== impl DynamicHostnameTlv ====
 
-impl RouterInfoDynamicHostnameTlv {
+impl DynamicHostnameTlv {
     pub(crate) fn decode(tlv_len: u16, buf: &mut Bytes) -> DecodeResult<Self> {
         let mut hostname = String::new();
         for _ in 0..tlv_len {
@@ -567,7 +567,7 @@ impl RouterInfoDynamicHostnameTlv {
             hostname.push(c as char);
         }
 
-        Ok(RouterInfoDynamicHostnameTlv { hostname })
+        Ok(DynamicHostnameTlv { hostname })
     }
 
     pub(crate) fn encode(&self, buf: &mut BytesMut) {

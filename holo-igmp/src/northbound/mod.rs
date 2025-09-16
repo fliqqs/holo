@@ -36,4 +36,8 @@ impl ProviderBase for Instance {
 }
 
 // No RPC/Actions to implement.
-impl holo_northbound::rpc::Provider for Instance {}
+impl holo_northbound::rpc::Provider for Instance {
+    fn callbacks() -> &'static holo_northbound::rpc::Callbacks<Self> {
+        todo!()
+    }
+}

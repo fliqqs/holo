@@ -6,7 +6,6 @@
 
 use std::collections::BTreeMap;
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use holo_protocol::{
     InstanceChannelsTx, InstanceShared, MessageReceiver, ProtocolInstance,
@@ -117,7 +116,6 @@ impl Instance {
     }
 }
 
-#[async_trait]
 impl ProtocolInstance for Instance {
     const PROTOCOL: Protocol = Protocol::IGMP;
 
@@ -126,7 +124,7 @@ impl ProtocolInstance for Instance {
     type ProtocolInputChannelsTx = ProtocolInputChannelsTx;
     type ProtocolInputChannelsRx = ProtocolInputChannelsRx;
 
-    async fn new(
+    fn new(
         name: String,
         shared: InstanceShared,
         tx: InstanceChannelsTx<Instance>,
@@ -142,16 +140,16 @@ impl ProtocolInstance for Instance {
         }
     }
 
-    async fn init(&mut self) {
+    fn init(&mut self) {
         // TODO: anything to do here?
     }
 
-    async fn shutdown(mut self) {
+    fn shutdown(self) {
         // TODO: stop IGMP on all interfaces.
     }
 
-    async fn process_ibus_msg(&mut self, msg: IbusMsg) {
-        if let Err(error) = process_ibus_msg(self, msg).await {
+    fn process_ibus_msg(&mut self, msg: IbusMsg) {
+        if let Err(error) = process_ibus_msg(self, msg) {
             error.log();
         }
     }
@@ -184,7 +182,6 @@ impl ProtocolInstance for Instance {
 
 // ===== impl ProtocolInputChannelsRx =====
 
-#[async_trait]
 impl MessageReceiver<ProtocolInputMsg> for ProtocolInputChannelsRx {
     async fn recv(&mut self) -> Option<ProtocolInputMsg> {
         tokio::select! {
@@ -198,7 +195,7 @@ impl MessageReceiver<ProtocolInputMsg> for ProtocolInputChannelsRx {
 
 // ===== helper functions =====
 
-async fn process_ibus_msg(
+fn process_ibus_msg(
     instance: &mut Instance,
     msg: IbusMsg,
 ) -> Result<(), Error> {

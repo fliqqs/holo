@@ -7,6 +7,7 @@
 // See: https://nlnet.nl/NGI0
 //
 
+use tracing::info;
 use std::cell::{RefCell, RefMut};
 use std::collections::BTreeSet;
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -38,10 +39,10 @@ use crate::packet::tlv::{
     Ipv4RouterIdTlv, Ipv6AddressesTlv, Ipv6Reach, Ipv6ReachTlv,
     Ipv6RouterIdTlv, IsReach, IsReachTlv, LegacyIpv4Reach, LegacyIpv4ReachTlv,
     LegacyIsReach, LegacyIsReachTlv, LspBufferSizeTlv, LspEntriesTlv, LspEntry,
-    MtFlags, MultiTopologyEntry, MultiTopologyTlv, NeighborsTlv, PaddingTlv,
-    ProtocolsSupportedTlv, PurgeOriginatorIdTlv, RouterCapTlv, TLV_HDR_SIZE,
-    TLV_MAX_LEN, ThreeWayAdjTlv, Tlv, UnknownTlv, tlv_entries_split,
-    tlv_take_max,
+    MtCapabilityTlv, MtFlags, MtPortCapabilityTlv, MultiTopologyEntry,
+    MultiTopologyTlv, NeighborsTlv, PaddingTlv, ProtocolsSupportedTlv,
+    PurgeOriginatorIdTlv, RouterCapTlv, TLV_HDR_SIZE, TLV_MAX_LEN,
+    ThreeWayAdjTlv, Tlv, UnknownTlv, tlv_entries_split, tlv_take_max,
 };
 use crate::packet::{
     AreaAddr, LanId, LevelNumber, LevelType, LspId, SystemId, auth,
@@ -98,6 +99,7 @@ pub struct HelloTlvs {
     pub ipv4_addrs: Vec<Ipv4AddressesTlv>,
     pub ipv6_addrs: Vec<Ipv6AddressesTlv>,
     pub ext_seqnum: Option<ExtendedSeqNumTlv>,
+    pub mt_port_cap: Vec<MtPortCapabilityTlv>,
     pub padding: Vec<PaddingTlv>,
     pub unknown: Vec<UnknownTlv>,
 }
@@ -171,6 +173,7 @@ pub struct LspTlvs {
     pub ipv6_reach: Vec<Ipv6ReachTlv>,
     pub mt_ipv6_reach: Vec<Ipv6ReachTlv>,
     pub ipv6_router_id: Option<Ipv6RouterIdTlv>,
+    pub mt_capability: Vec<MtCapabilityTlv>,
     pub unknown: Vec<UnknownTlv>,
 }
 
@@ -699,6 +702,12 @@ impl Hello {
                         Err(error) => error.log(),
                     }
                 }
+                Some(TlvType::MtPortCapability) => {
+                    match MtPortCapabilityTlv::decode(tlv_len, &mut buf_tlv) {
+                        Ok(tlv) => tlvs.mt_port_cap.push(tlv),
+                        Err(error) => error.log(),
+                    }
+                }
                 _ => {
                     // Save unknown top-level TLV.
                     tlvs.unknown
@@ -725,6 +734,11 @@ impl Hello {
     fn encode(&self, auth_key: Option<&Key>) -> Bytes {
         TLS_BUF.with(|buf| {
             let mut buf = pdu_encode_start(buf, &self.hdr);
+
+            info!("Encoding Hello PDU from source");
+
+            //print self tlvs
+            info!("Hello TLVs: {:?}", self.tlvs);
 
             let circuit_type = match self.circuit_type {
                 LevelType::L1 => 1,
@@ -782,6 +796,9 @@ impl Hello {
             if let Some(tlv) = &self.tlvs.ext_seqnum {
                 tlv.encode(&mut buf);
             }
+            for tlv in &self.tlvs.mt_port_cap {
+                tlv.encode(&mut buf);
+            }
             for tlv in &self.tlvs.padding {
                 tlv.encode(&mut buf);
             }
@@ -815,6 +832,9 @@ impl Hello {
             total_tlv_len += tlv.len();
         }
         if let Some(tlv) = &self.tlvs.ext_seqnum {
+            total_tlv_len += tlv.len();
+        }
+        for tlv in &self.tlvs.mt_port_cap {
             total_tlv_len += tlv.len();
         }
 
@@ -857,6 +877,7 @@ impl HelloTlvs {
             ipv4_addrs: tlv_entries_split(ipv4_addrs),
             ipv6_addrs: tlv_entries_split(ipv6_addrs),
             ext_seqnum: ext_seqnum.map(ExtendedSeqNumTlv::new),
+            mt_port_cap: Default::default(),
             padding: Default::default(),
             unknown: Default::default(),
         }
@@ -1164,6 +1185,12 @@ impl Lsp {
                         Err(error) => error.log(),
                     }
                 }
+                Some(TlvType::MtCapability) => {
+                    match MtCapabilityTlv::decode(tlv_len, &mut buf_tlv) {
+                        Ok(tlv) => tlvs.mt_capability.push(tlv),
+                        Err(error) => error.log(),
+                    }
+                }
                 _ => {
                     // Save unknown top-level TLV.
                     tlvs.unknown
@@ -1276,6 +1303,9 @@ impl Lsp {
                 tlv.encode(&mut buf);
             }
             if let Some(tlv) = &self.tlvs.ipv6_router_id {
+                tlv.encode(&mut buf);
+            }
+            for tlv in &self.tlvs.mt_capability {
                 tlv.encode(&mut buf);
             }
 
@@ -1471,6 +1501,7 @@ impl LspTlvs {
                 })
                 .collect(),
             ipv6_router_id: ipv6_router_id.map(Ipv6RouterIdTlv::new),
+            mt_capability: Default::default(),
             unknown: Default::default(),
         }
     }
@@ -1541,6 +1572,7 @@ impl LspTlvs {
             ipv6_reach,
             mt_ipv6_reach,
             ipv6_router_id,
+            mt_capability: Default::default(),
             unknown: Default::default(),
         })
     }

@@ -11,6 +11,7 @@
 
 use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use tracing::info;
 
 use bitflags::bitflags;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -29,8 +30,8 @@ use serde::{Deserialize, Serialize};
 use tracing::debug_span;
 
 use crate::packet::consts::{
-    AuthenticationType, NeighborStlvType, Nlpid, PrefixStlvType,
-    RouterCapStlvType, TlvType,
+    AuthenticationType, MtCapabilityStlvType, MtPortCapStlvType,
+    NeighborStlvType, Nlpid, PrefixStlvType, RouterCapStlvType, TlvType,
 };
 use crate::packet::error::{TlvDecodeError, TlvDecodeResult};
 #[cfg(feature = "testing")]
@@ -43,6 +44,10 @@ use crate::packet::subtlvs::capability::{
 use crate::packet::subtlvs::prefix::{
     BierInfoStlv, Ipv4SourceRidStlv, Ipv6SourceRidStlv, PrefixAttrFlags,
     PrefixAttrFlagsStlv, PrefixSidStlv,
+};
+use crate::packet::subtlvs::spb::{
+    SpbBaseVidStlv, SpbDigestStlv, SpbInstanceOpaqueEctStlv,
+    SpbInstanceStlv, SpbMcidStlv, SpbmServiceIdStlv, SpbvMacAddrStlv,
 };
 use crate::packet::{AreaAddr, LanId, LspId, SystemId, subtlvs};
 
@@ -446,6 +451,50 @@ pub struct UnknownTlv {
     pub tlv_type: u8,
     pub length: u8,
     pub value: Bytes,
+}
+
+// SPB MT-Port-Capability TLV (used in Hello PDUs)
+#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Deserialize, Serialize)]
+pub struct MtPortCapabilityTlv {
+    pub mt_id: u16,
+    pub sub_tlvs: MtPortCapStlvs,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+#[serde_with::apply(
+    Option => #[serde(default, skip_serializing_if = "Option::is_none")],
+    Vec => #[serde(default, skip_serializing_if = "Vec::is_empty")],
+)]
+#[derive(Deserialize, Serialize)]
+pub struct MtPortCapStlvs {
+    pub spb_mcid: Option<SpbMcidStlv>,
+    pub spb_digest: Option<SpbDigestStlv>,
+    pub spb_base_vid: Option<SpbBaseVidStlv>,
+    pub unknown: Vec<UnknownTlv>,
+}
+
+// SPB MT-Capability TLV (used in LSPs)
+#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Deserialize, Serialize)]
+pub struct MtCapabilityTlv {
+    pub overload: bool,
+    pub mt_id: u16,
+    pub sub_tlvs: MtCapabilityStlvs,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+#[serde_with::apply(
+    Option => #[serde(default, skip_serializing_if = "Option::is_none")],
+    Vec => #[serde(default, skip_serializing_if = "Vec::is_empty")],
+)]
+#[derive(Deserialize, Serialize)]
+pub struct MtCapabilityStlvs {
+    pub spb_instance: Option<SpbInstanceStlv>,
+    pub spb_instance_opaque_ect: Vec<SpbInstanceOpaqueEctStlv>,
+    pub spbm_service_id: Vec<SpbmServiceIdStlv>,
+    pub spbv_mac_addr: Vec<SpbvMacAddrStlv>,
+    pub unknown: Vec<UnknownTlv>,
 }
 
 // ===== impl Nlpid =====
@@ -2520,6 +2569,255 @@ impl Tlv for RouterCapTlv {
             len += stlv.len();
         }
         if let Some(stlv) = &self.sub_tlvs.flooding_algo {
+            len += stlv.len();
+        }
+
+        len
+    }
+}
+
+// ===== impl MtCapabilityTlv =====
+
+impl MtCapabilityTlv {
+    const MIN_SIZE: usize = 2;
+
+    pub(crate) fn decode(
+        tlv_len: u8,
+        buf: &mut Bytes,
+    ) -> TlvDecodeResult<Self> {
+        // Validate the TLV length.
+        if (tlv_len as usize) < Self::MIN_SIZE {
+            return Err(TlvDecodeError::InvalidLength(tlv_len));
+        }
+
+        // Parse O and MT ID
+        let flags_mt_id = buf.try_get_u16()?;
+        let overload = (flags_mt_id & 0x8000) != 0;
+        let mt_id = flags_mt_id & 0x0FFF;
+
+        // Parse Sub-TLVs.
+        let mut sub_tlvs = MtCapabilityStlvs::default();
+        while buf.remaining() >= TLV_HDR_SIZE {
+            // Parse Sub-TLV type.
+            let stlv_type = buf.try_get_u8()?;
+            let stlv_etype = MtCapabilityStlvType::from_u8(stlv_type);
+
+            // Parse and validate Sub-TLV length.
+            let stlv_len = buf.try_get_u8()?;
+            if stlv_len as usize > buf.remaining() {
+                return Err(TlvDecodeError::InvalidLength(stlv_len));
+            }
+
+            // Parse Sub-TLV value.
+            let span =
+                debug_span!("sub-TLV", r#type = stlv_type, length = stlv_len);
+            let _span_guard = span.enter();
+            let mut buf_stlv = buf.copy_to_bytes(stlv_len as usize);
+            match stlv_etype {
+                Some(MtCapabilityStlvType::SpbInstance) => {
+                    if sub_tlvs.spb_instance.is_some() {
+                        continue;
+                    }
+                    match SpbInstanceStlv::decode(stlv_len, &mut buf_stlv) {
+                        Ok(stlv) => sub_tlvs.spb_instance = Some(stlv),
+                        Err(error) => error.log(),
+                    }
+                }
+                Some(MtCapabilityStlvType::SpbInstanceOpaqueEct) => {
+                    match SpbInstanceOpaqueEctStlv::decode(stlv_len, &mut buf_stlv) {
+                        Ok(stlv) => sub_tlvs.spb_instance_opaque_ect.push(stlv),
+                        Err(error) => error.log(),
+                    }
+                }
+                Some(MtCapabilityStlvType::SpbmServiceId) => {
+                    match SpbmServiceIdStlv::decode(stlv_len, &mut buf_stlv) {
+                        Ok(stlv) => sub_tlvs.spbm_service_id.push(stlv),
+                        Err(error) => error.log(),
+                    }
+                }
+                Some(MtCapabilityStlvType::SpbvMacAddr) => {
+                    match SpbvMacAddrStlv::decode(stlv_len, &mut buf_stlv) {
+                        Ok(stlv) => sub_tlvs.spbv_mac_addr.push(stlv),
+                        Err(error) => error.log(),
+                    }
+                }
+                _ => {
+                    // Save unknown Sub-TLV.
+                    sub_tlvs
+                        .unknown
+                        .push(UnknownTlv::new(stlv_type, stlv_len, buf_stlv));
+                }
+            }
+        }
+
+        Ok(MtCapabilityTlv {
+            overload,
+            mt_id,
+            sub_tlvs,
+        })
+    }
+
+    pub(crate) fn encode(&self, buf: &mut BytesMut) {
+        let start_pos = tlv_encode_start(buf, TlvType::MtCapability);
+        
+        // Encode O bit and MT ID
+        let mut flags_mt_id = self.mt_id & 0x0FFF;
+        if self.overload {
+            flags_mt_id |= 0x8000;
+        }
+        buf.put_u16(flags_mt_id);
+        
+        // Encode Sub-TLVs.
+        if let Some(stlv) = &self.sub_tlvs.spb_instance {
+            stlv.encode(buf);
+        }
+        for stlv in &self.sub_tlvs.spb_instance_opaque_ect {
+            stlv.encode(buf);
+        }
+        for stlv in &self.sub_tlvs.spbm_service_id {
+            stlv.encode(buf);
+        }
+        for stlv in &self.sub_tlvs.spbv_mac_addr {
+            stlv.encode(buf);
+        }
+        
+        tlv_encode_end(buf, start_pos);
+    }
+}
+
+impl Tlv for MtCapabilityTlv {
+    fn len(&self) -> usize {
+        let mut len = TLV_HDR_SIZE + Self::MIN_SIZE;
+
+        if let Some(stlv) = &self.sub_tlvs.spb_instance {
+            len += stlv.len();
+        }
+        for stlv in &self.sub_tlvs.spb_instance_opaque_ect {
+            len += stlv.len();
+        }
+        for stlv in &self.sub_tlvs.spbm_service_id {
+            len += stlv.len();
+        }
+        for stlv in &self.sub_tlvs.spbv_mac_addr {
+            len += stlv.len();
+        }
+
+        len
+    }
+}
+
+// ===== impl MtPortCapabilityTlv =====
+
+impl MtPortCapabilityTlv {
+    const MIN_SIZE: usize = 2;
+
+    pub(crate) fn decode(
+        tlv_len: u8,
+        buf: &mut Bytes,
+    ) -> TlvDecodeResult<Self> {
+        // Validate the TLV length.
+        if (tlv_len as usize) < Self::MIN_SIZE {
+            return Err(TlvDecodeError::InvalidLength(tlv_len));
+        }
+
+        // Parse MT ID
+        let mt_id = buf.try_get_u16()? & 0x0FFF;
+
+        // Parse Sub-TLVs.
+        let mut sub_tlvs = MtPortCapStlvs::default();
+        while buf.remaining() >= TLV_HDR_SIZE {
+            // Parse Sub-TLV type.
+            let stlv_type = buf.try_get_u8()?;
+            let stlv_etype = MtPortCapStlvType::from_u8(stlv_type);
+
+            // Parse and validate Sub-TLV length.
+            let stlv_len = buf.try_get_u8()?;
+            if stlv_len as usize > buf.remaining() {
+                return Err(TlvDecodeError::InvalidLength(stlv_len));
+            }
+
+            // Parse Sub-TLV value.
+            let span =
+                debug_span!("sub-TLV", r#type = stlv_type, length = stlv_len);
+            let _span_guard = span.enter();
+            let mut buf_stlv = buf.copy_to_bytes(stlv_len as usize);
+            match stlv_etype {
+                Some(MtPortCapStlvType::SpbMcid) => {
+                    if sub_tlvs.spb_mcid.is_some() {
+                        continue;
+                    }
+                    match SpbMcidStlv::decode(stlv_len, &mut buf_stlv) {
+                        Ok(stlv) => sub_tlvs.spb_mcid = Some(stlv),
+                        Err(error) => error.log(),
+                    }
+                }
+                Some(MtPortCapStlvType::SpbDigest) => {
+                    if sub_tlvs.spb_digest.is_some() {
+                        continue;
+                    }
+                    match SpbDigestStlv::decode(stlv_len, &mut buf_stlv) {
+                        Ok(stlv) => sub_tlvs.spb_digest = Some(stlv),
+                        Err(error) => error.log(),
+                    }
+                }
+                Some(MtPortCapStlvType::SpbBaseVid) => {
+                    if sub_tlvs.spb_base_vid.is_some() {
+                        continue;
+                    }
+                    match SpbBaseVidStlv::decode(stlv_len, &mut buf_stlv) {
+                        Ok(stlv) => sub_tlvs.spb_base_vid = Some(stlv),
+                        Err(error) => error.log(),
+                    }
+                }
+                _ => {
+                    // Save unknown Sub-TLV.
+                    sub_tlvs
+                        .unknown
+                        .push(UnknownTlv::new(stlv_type, stlv_len, buf_stlv));
+                }
+            }
+        }
+
+        Ok(MtPortCapabilityTlv {
+            mt_id,
+            sub_tlvs,
+        })
+    }
+
+    pub(crate) fn encode(&self, buf: &mut BytesMut) {
+        let start_pos = tlv_encode_start(buf, TlvType::MtPortCapability);
+        
+        // Encode MT ID
+        buf.put_u16(self.mt_id & 0x0FFF);
+
+        info!("Encoding MtPortCapabilityTlv with MT ID: {}", self.mt_id);
+        
+        // Encode Sub-TLVs.
+        if let Some(stlv) = &self.sub_tlvs.spb_mcid {
+            stlv.encode(buf);
+        }
+        if let Some(stlv) = &self.sub_tlvs.spb_digest {
+            stlv.encode(buf);
+        }
+        if let Some(stlv) = &self.sub_tlvs.spb_base_vid {
+            stlv.encode(buf);
+        }
+        
+        tlv_encode_end(buf, start_pos);
+    }
+}
+
+impl Tlv for MtPortCapabilityTlv {
+    fn len(&self) -> usize {
+        let mut len = TLV_HDR_SIZE + Self::MIN_SIZE;
+
+        if let Some(stlv) = &self.sub_tlvs.spb_mcid {
+            len += stlv.len();
+        }
+        if let Some(stlv) = &self.sub_tlvs.spb_digest {
+            len += stlv.len();
+        }
+        if let Some(stlv) = &self.sub_tlvs.spb_base_vid {
             len += stlv.len();
         }
 

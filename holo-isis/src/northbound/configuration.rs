@@ -51,6 +51,7 @@ pub enum ListEntry {
     Redistribution(AddressFamily, LevelNumber, Protocol),
     Topology(MtId),
     NodeTag(u32),
+    SpbmService(u32),
     TraceOption(InstanceTraceOption),
     Interface(InterfaceIndex),
     InterfaceAddressFamily(InterfaceIndex, AddressFamily),
@@ -127,6 +128,7 @@ pub struct InstanceCfg {
     pub sr: InstanceSrCfg,
     pub bier: InstanceBierCfg,
     pub trace_opts: InstanceTraceOptions,
+    pub spb: InstanceSpbCfg,
 }
 
 #[derive(Debug)]
@@ -150,6 +152,31 @@ pub struct InstanceBierCfg {
     pub mt_id: u8,
     pub enabled: bool,
     pub advertise: bool,
+    pub receive: bool,
+}
+
+#[derive(Debug, Default)]
+pub struct InstanceSpbCfg {
+    pub enabled: bool,
+    pub mode: SpbMode,
+    pub b_mac: Option<holo_utils::mac_addr::MacAddr>,
+    pub base_vid: Option<u16>,
+    pub spbm_services: BTreeMap<u32, SpbmServiceCfg>,
+    pub bridge_priority: Option<u16>,
+    pub sp_source_id: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub enum SpbMode {
+    #[default]
+    Spbm,
+    Spbv,
+}
+
+#[derive(Debug, Default)]
+pub struct SpbmServiceCfg {
+    pub i_sid: u32,
+    pub transmit: bool,
     pub receive: bool,
 }
 
@@ -958,6 +985,158 @@ fn load_callbacks() -> Callbacks<Instance> {
 
             let event_queue = args.event_queue;
             event_queue.insert(Event::RerunSpf);
+        })
+        .path(isis::spb::enabled::PATH)
+        .modify_apply(|instance, args| {
+            let enabled = args.dnode.get_bool();
+            instance.config.spb.enabled = enabled;
+
+            let event_queue = args.event_queue;
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L1));
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L2));
+        })
+        .path(isis::spb::mode::PATH)
+        .modify_apply(|instance, args| {
+            let mode = args.dnode.get_string();
+            let mode = SpbMode::try_from_yang(&mode).unwrap();
+            instance.config.spb.mode = mode;
+
+            let event_queue = args.event_queue;
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L1));
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L2));
+        })
+        .path(isis::spb::b_mac::PATH)
+        .modify_apply(|instance, args| {
+            let b_mac_str = args.dnode.get_string();
+            // Parse MAC address manually from string (format: xx:xx:xx:xx:xx:xx)
+            let bytes: Vec<u8> = b_mac_str
+                .split(':')
+                .filter_map(|b| u8::from_str_radix(b, 16).ok())
+                .collect();
+            if bytes.len() == 6 {
+                let b_mac = holo_utils::mac_addr::MacAddr::from([
+                    bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
+                ]);
+                instance.config.spb.b_mac = Some(b_mac);
+            }
+
+            let event_queue = args.event_queue;
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L1));
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L2));
+        })
+        .delete_apply(|instance, args| {
+            instance.config.spb.b_mac = None;
+
+            let event_queue = args.event_queue;
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L1));
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L2));
+        })
+        .path(isis::spb::base_vid::PATH)
+        .modify_apply(|instance, args| {
+            let base_vid = args.dnode.get_u16();
+            instance.config.spb.base_vid = Some(base_vid);
+
+            let event_queue = args.event_queue;
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L1));
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L2));
+        })
+        .delete_apply(|instance, args| {
+            instance.config.spb.base_vid = None;
+
+            let event_queue = args.event_queue;
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L1));
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L2));
+        })
+        .path(isis::spb::bridge_priority::PATH)
+        .modify_apply(|instance, args| {
+            let bridge_priority = args.dnode.get_u16();
+            instance.config.spb.bridge_priority = Some(bridge_priority);
+
+            let event_queue = args.event_queue;
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L1));
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L2));
+        })
+        .delete_apply(|instance, args| {
+            instance.config.spb.bridge_priority = None;
+
+            let event_queue = args.event_queue;
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L1));
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L2));
+        })
+        .path(isis::spb::sp_source_id::PATH)
+        .modify_apply(|instance, args| {
+            let sp_source_id = args.dnode.get_u32();
+            instance.config.spb.sp_source_id = Some(sp_source_id);
+
+            let event_queue = args.event_queue;
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L1));
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L2));
+        })
+        .delete_apply(|instance, args| {
+            instance.config.spb.sp_source_id = None;
+
+            let event_queue = args.event_queue;
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L1));
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L2));
+        })
+        .path(isis::spb::spbm_service::PATH)
+        .create_apply(|instance, args| {
+            let i_sid = args.dnode.get_u32_relative("i-sid").unwrap();
+            let transmit = args.dnode.get_bool_relative("transmit").unwrap_or(true);
+            let receive = args.dnode.get_bool_relative("receive").unwrap_or(true);
+            
+            let service = SpbmServiceCfg {
+                i_sid,
+                transmit,
+                receive,
+            };
+            instance.config.spb.spbm_services.insert(i_sid, service);
+
+            let event_queue = args.event_queue;
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L1));
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L2));
+        })
+        .delete_apply(|instance, args| {
+            let i_sid = args.dnode.get_u32_relative("i-sid").unwrap();
+            instance.config.spb.spbm_services.remove(&i_sid);
+
+            let event_queue = args.event_queue;
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L1));
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L2));
+        })
+        .lookup(|_instance, _list_entry, dnode| {
+            let i_sid = dnode.get_u32_relative("i-sid").unwrap();
+            ListEntry::SpbmService(i_sid)
+        })
+        .path(isis::spb::spbm_service::transmit::PATH)
+        .modify_apply(|instance, args| {
+            let i_sid = match args.list_entry {
+                ListEntry::SpbmService(i_sid) => i_sid,
+                _ => return,
+            };
+            let transmit = args.dnode.get_bool();
+            if let Some(service) = instance.config.spb.spbm_services.get_mut(&i_sid) {
+                service.transmit = transmit;
+            }
+
+            let event_queue = args.event_queue;
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L1));
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L2));
+        })
+        .path(isis::spb::spbm_service::receive::PATH)
+        .modify_apply(|instance, args| {
+            let i_sid = match args.list_entry {
+                ListEntry::SpbmService(i_sid) => i_sid,
+                _ => return,
+            };
+            let receive = args.dnode.get_bool();
+            if let Some(service) = instance.config.spb.spbm_services.get_mut(&i_sid) {
+                service.receive = receive;
+            }
+
+            let event_queue = args.event_queue;
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L1));
+            event_queue.insert(Event::ReoriginateLsps(LevelNumber::L2));
         })
         .path(isis::trace_options::flag::PATH)
         .create_apply(|instance, args| {
@@ -2636,6 +2815,7 @@ impl Default for InstanceCfg {
             sr: Default::default(),
             bier: Default::default(),
             trace_opts: Default::default(),
+            spb: Default::default(),
         }
     }
 }
@@ -2816,5 +2996,24 @@ impl Default for TraceOptionPacketType {
         let rx = isis::trace_options::flag::receive::DFLT;
 
         TraceOptionPacketType { tx, rx }
+    }
+}
+
+impl TryFromYang for SpbMode {
+    fn try_from_yang(value: &str) -> Option<SpbMode> {
+        match value {
+            "spbm" => Some(SpbMode::Spbm),
+            "spbv" => Some(SpbMode::Spbv),
+            _ => None,
+        }
+    }
+}
+
+impl ToYang for SpbMode {
+    fn to_yang(&self) -> std::borrow::Cow<'static, str> {
+        match self {
+            SpbMode::Spbm => "spbm".into(),
+            SpbMode::Spbv => "spbv".into(),
+        }
     }
 }

@@ -216,6 +216,125 @@ module holo-isis {
           "Specifies the flooding reduction algorithm in use.";
       }
     }
+    
+    container spb {
+      description
+        "Configuration for IEEE 802.1aq Shortest Path Bridging (SPB).
+         SPB extends IS-IS to support Layer 2 shortest path forwarding
+         in Ethernet mesh networks.";
+      reference
+        "RFC 6329: IS-IS Extensions Supporting IEEE 802.1aq
+         Shortest Path Bridging";
+
+      leaf enabled {
+        type boolean;
+        default false;
+        description
+          "Enable or disable SPB on this IS-IS instance. When enabled,
+           the router will advertise SPB capability using NLPID 0xC1
+           and participate in SPB topology computation.";
+      }
+
+      leaf mode {
+        type enumeration {
+          enum spbm {
+            description
+              "SPB MAC mode (SPBM) - Uses 802.1ah MAC-in-MAC encapsulation
+               with I-SID service identifiers. Designed for larger networks.";
+          }
+          enum spbv {
+            description
+              "SPB VID mode (SPBV) - Uses 802.1Q/802.1ad VLAN tagging.
+               Designed for smaller networks.";
+          }
+        }
+        default spbm;
+        description
+          "SPB operational mode. SPBM uses MAC-in-MAC encapsulation
+           while SPBV uses VLAN-based forwarding.";
+        reference
+          "RFC 6329: IS-IS Extensions Supporting IEEE 802.1aq
+           Shortest Path Bridging";
+      }
+
+      leaf b-mac {
+        type yang:mac-address;
+        description
+          "Backbone MAC (B-MAC) address used for SPBM unicast forwarding.
+           This is the address advertised in SPBM Service Identifier sub-TLVs.
+           Must be configured when operating in SPBM mode.";
+        reference
+          "RFC 6329 Section 16.1: SPBM Service Identifier and Unicast Address";
+      }
+
+      leaf base-vid {
+        type uint16 {
+          range "1..4094";
+        }
+        description
+          "Base VLAN ID for SPB operation. This VLAN is used as the base
+           for ECT algorithm assignments and service instance identification.";
+        reference
+          "RFC 6329 Section 13.3: SPB-Base-VID Sub-TLV";
+      }
+
+      list spbm-service {
+        when "../mode = 'spbm'";
+        key "i-sid";
+        description
+          "SPBM service instance configuration. Each service is identified
+           by a unique I-SID (Service Instance Identifier) and defines
+           transmit and receive capabilities.";
+        reference
+          "RFC 6329 Section 16.1: SPBM Service Identifier and Unicast Address";
+
+        leaf i-sid {
+          type uint32 {
+            range "0..16777215";
+          }
+          description
+            "I-SID (Service Instance Identifier) - 24-bit identifier
+             for the service instance in SPBM mode.";
+        }
+
+        leaf transmit {
+          type boolean;
+          default true;
+          description
+            "Enable transmission for this service instance.
+             When true, the T-bit is set in the I-SID entry.";
+        }
+
+        leaf receive {
+          type boolean;
+          default true;
+          description
+            "Enable reception for this service instance.
+             When true, the R-bit is set in the I-SID entry.";
+        }
+      }
+
+      leaf bridge-priority {
+        type uint16;
+        description
+          "Bridge priority used in SPB Instance sub-TLV.
+           Used for SPSourceID tie-breaking and topology computations.";
+        reference
+          "RFC 6329 Section 14.1: SPB Instance Sub-TLV";
+      }
+
+      leaf sp-source-id {
+        type uint32 {
+          range "0..1048575";
+        }
+        description
+          "SPSourceID - 20-bit identifier uniquely identifying this bridge
+           within the SPB domain. Used in SPBV mode for per-source VLANs.
+           If not configured, can be auto-allocated.";
+        reference
+          "RFC 6329 Section 14.1: SPB Instance Sub-TLV";
+      }
+    }
 
     container trace-options {
       description "Instance level trace options for IS-IS.";

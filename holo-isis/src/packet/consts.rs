@@ -60,6 +60,8 @@ pub enum TlvType {
     ExtIpv4Reach = 135,
     DynamicHostname = 137,
     Ipv6RouterId = 140,
+    MtPortCapability = 143,
+    MtCapability = 144,
     MtIsReach = 222,
     MultiTopology = 229,
     Ipv6Addresses = 232,
@@ -99,6 +101,8 @@ pub enum NeighborStlvType {
     UnreservedBandwidth = 11,
     LinkMsd = 15,
     TeDefaultMetric = 18,
+    SpbMetric = 29,
+    SpbAdjacencyOpaqueEct = 30,
     AdjacencySid = 31,
     LanAdjacencySid = 32,
 }
@@ -159,6 +163,33 @@ pub enum BierSubStlvType {
     NonMplsEncap = 42,
 }
 
+// IS-IS Sub-TLVs for MT Port Capability TLV (SPB Hello PDUs).
+//
+// IANA registry:
+// https://www.iana.org/assignments/isis-tlv-codepoints/isis-tlv-codepoints.xhtml#isis-tlv-codepoints-143
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(FromPrimitive, ToPrimitive)]
+#[derive(Deserialize, Serialize)]
+pub enum MtPortCapStlvType {
+    SpbMcid = 4,
+    SpbDigest = 5,
+    SpbBaseVid = 6,
+}
+
+// IS-IS Sub-TLVs for MT Capability TLV (SPB LSPs).
+//
+// IANA registry:
+// https://www.iana.org/assignments/isis-tlv-codepoints/isis-tlv-codepoints.xhtml#isis-tlv-codepoints-144
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(FromPrimitive, ToPrimitive)]
+#[derive(Deserialize, Serialize)]
+pub enum MtCapabilityStlvType {
+    SpbInstance = 1,
+    SpbInstanceOpaqueEct = 2,
+    SpbmServiceId = 3,
+    SpbvMacAddr = 4,
+}
+
 // Network Layer Protocol Identifiers (NLPIDs).
 //
 // IANA Registry:
@@ -166,6 +197,7 @@ pub enum BierSubStlvType {
 pub enum Nlpid {
     Ipv4 = 0xCC,
     Ipv6 = 0x8E,
+    Spb = 0xC1,
 }
 
 // IS-IS Multi-Topology ID Values.

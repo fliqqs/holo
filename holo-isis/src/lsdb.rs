@@ -11,6 +11,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashSet, btree_map};
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::time::Instant;
+use tracing::info;
 
 use bitflags::bitflags;
 use derive_new::new;
@@ -48,10 +49,12 @@ use crate::packet::subtlvs::prefix::{
     Ipv6SourceRidStlv, PrefixAttrFlags, PrefixAttrFlagsStlv, PrefixSidFlags,
     PrefixSidStlv,
 };
+use crate::packet::subtlvs::spb::{ISidEntry, SpbmServiceIdStlv};
 use crate::packet::tlv::{
     IpReachTlvEntry, Ipv4Reach, Ipv4ReachStlvs, Ipv6Reach, Ipv6ReachStlvs,
     IsReach, IsReachStlvs, LegacyIpv4Reach, LegacyIsReach, MAX_NARROW_METRIC,
-    MtFlags, MultiTopologyEntry, RouterCapFlags, RouterCapTlv,
+    MtCapabilityStlvs, MtCapabilityTlv, MtFlags, MultiTopologyEntry,
+    RouterCapFlags, RouterCapTlv,
 };
 use crate::packet::{LanId, LevelNumber, LevelType, LspId};
 use crate::spf::{SpfType, VertexId};
@@ -257,6 +260,7 @@ fn lsp_build_tlvs(
     let metric_type = instance.config.metric_type.get(level);
     let mut protocols_supported = vec![];
     let mut router_cap = vec![];
+    let mut mt_capability = vec![];
     let mut is_reach = vec![];
     let mut ext_is_reach = vec![];
     let mut mt_is_reach = vec![];
@@ -275,9 +279,18 @@ fn lsp_build_tlvs(
     if instance.config.is_af_enabled(AddressFamily::Ipv6) {
         protocols_supported.push(Nlpid::Ipv6 as u8);
     }
-
+    if instance.config.spb.enabled {
+        info!("SPB is enabled, adding SPB NLPID to Protocols Supported TLV");
+        protocols_supported.push(Nlpid::Spb as u8);
+    }
+    
     // Add router capabilities.
     lsp_build_tlvs_router_cap(instance, &mut router_cap);
+
+    // Add SPB MT-Capability TLVs.
+    lsp_build_tlvs_spb_mt_capability(instance, &mut mt_capability);
+
+    info!("mt capability tlvs: {:?}", mt_capability);
 
     // Add topologies.
     let mut multi_topology = vec![];
@@ -350,7 +363,7 @@ fn lsp_build_tlvs(
         std::mem::swap(&mut ipv6_reach, &mut mt_ipv6_reach);
     }
 
-    LspTlvs::new(
+    let lsp_tlv = LspTlvs::new(
         protocols_supported,
         router_cap,
         instance.config.area_addrs.clone(),
@@ -370,7 +383,12 @@ fn lsp_build_tlvs(
         ipv6_reach.into_values(),
         mt_ipv6_reach.into_values(),
         instance.config.ipv6_router_id,
-    )
+    );
+
+    // print LsP TLVs
+    // info!("LSP TLVs: {:#?}", lsp_tlv);
+    lsp_tlv
+
 }
 
 fn lsp_build_tlvs_pseudo(
@@ -508,6 +526,75 @@ fn lsp_build_tlvs_router_cap(
         || cap.sub_tlvs.flooding_algo.is_some()
     {
         router_cap.push(cap);
+    }
+}
+
+fn lsp_build_tlvs_spb_mt_capability(
+    instance: &InstanceUpView<'_>,
+    mt_capability: &mut Vec<MtCapabilityTlv>,
+) {
+    // Only build MT-Capability TLV if SPB is enabled.
+    if !instance.config.spb.enabled {
+        return;
+    }
+
+    // Need system ID to derive B-MAC (if not explicitly configured)
+    let Some(system_id) = instance.config.system_id else {
+        return;
+    };
+
+    info!("Building SPB MT-Capability TLV");
+
+    // Create MT-Capability TLV for standard topology (MT-ID 0).
+    let mut mt_cap = MtCapabilityTlv {
+        overload: false,
+        mt_id: MtId::Standard as u16,
+        sub_tlvs: MtCapabilityStlvs::default(),
+    };
+
+    // Get B-MAC from configuration, or derive from system ID
+    let b_mac = if let Some(configured_b_mac) = instance.config.spb.b_mac {
+        configured_b_mac
+    } else {
+        // Derive B-MAC from system ID (using system ID as the MAC address)
+        let system_id_bytes: &[u8; 6] = system_id.as_ref();
+        holo_utils::mac_addr::MacAddr::from(*system_id_bytes)
+    };
+    
+    info!("Adding SPBM Service ID sub-TLV with B-MAC: {}", b_mac);
+    
+    // Get base VID from configuration, default to 100
+    let base_vid = instance.config.spb.base_vid.unwrap_or(100);
+    
+    // Build I-SID entries from configuration
+    let i_sid_entries: Vec<ISidEntry> = instance
+        .config
+        .spb
+        .spbm_services
+        .values()
+        .map(|service| ISidEntry {
+            t_bit: service.transmit,
+            r_bit: service.receive,
+            i_sid: service.i_sid,
+        })
+        .collect();
+
+    // Only add SPBM Service ID sub-TLV if we have services configured
+    if !i_sid_entries.is_empty() {
+        let spbm_service = SpbmServiceIdStlv {
+            b_mac,
+            base_vid,
+            i_sid_entries,
+        };
+
+        mt_cap.sub_tlvs.spbm_service_id.push(spbm_service);
+    }
+
+    // Only add the MT-Capability TLV if it has sub-TLVs
+    if !mt_cap.sub_tlvs.spbm_service_id.is_empty() {
+        let count = mt_cap.sub_tlvs.spbm_service_id.len();
+        mt_capability.push(mt_cap);
+        info!("Added MT-Capability TLV with {} SPBM Service ID sub-TLVs", count);
     }
 }
 

@@ -21,6 +21,7 @@ use holo_utils::keychain::{Key, Keychains};
 use holo_utils::mac_addr::MacAddr;
 use holo_utils::protocol::Protocol;
 use holo_yang::TryFromYang;
+use holo_yang::types::HexString;
 use ipnetwork::IpNetwork;
 use prefix_trie::joint::map::JointPrefixMap;
 
@@ -32,8 +33,8 @@ use crate::northbound::notification;
 use crate::northbound::yang_gen::config::{
     self, AddressFamilyListChange, AddressFamilyListEntryChange, AddressFamilyListRedistributionChange, ConfigChange, InterLevelPropagationPoliciesLevel1ToLevel2SummaryPrefixesChange,
     InterLevelPropagationPoliciesLevel1ToLevel2SummaryPrefixesEntryChange, InterfaceAddressFamilyListChange, InterfaceChange, InterfaceEntryChange, InterfaceIsisAslaInterfaceAslaChange, InterfaceIsisAslaInterfaceAslaEntryChange,
-    InterfaceTopologyChange, InterfaceTopologyEntryChange, InterfaceTraceOptionsFlagChange, InterfaceTraceOptionsFlagEntryChange, NodeTagChange, SpbServiceChange, SpbServiceEntryChange, SpbServiceIsidChange, SpbServiceIsidEntryChange,
-    TopologyChange, TopologyEntryChange, TraceOptionsFlagChange, TraceOptionsFlagEntryChange,
+    InterfaceSpbUniServiceChange, InterfaceTopologyChange, InterfaceTopologyEntryChange, InterfaceTraceOptionsFlagChange, InterfaceTraceOptionsFlagEntryChange, NodeTagChange, SpbServiceChange, SpbServiceEntryChange, SpbServiceIsidChange,
+    SpbServiceIsidEntryChange, SpbTreeChange, SpbTreeEntryChange, TopologyChange, TopologyEntryChange, TraceOptionsFlagChange, TraceOptionsFlagEntryChange,
 };
 use crate::northbound::yang_gen::isis;
 use crate::packet::auth::AuthMethod;
@@ -66,6 +67,7 @@ pub enum Event {
     ReoriginateLsps(LevelNumber),
     RefreshLsps,
     RerunSpf,
+    SpbRecompute,
     ReinstallRoutes,
     OverloadChange(bool),
     SrEnabledChange(bool),
@@ -165,10 +167,45 @@ pub struct InstanceBierCfg {
     pub receive: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct InstanceSpbCfg {
     pub enabled: bool,
+    /// High-order two bytes of the BridgeID; the basis of ECT tie-breaking.
+    pub bridge_priority: u16,
+    /// Auto-allocate the SPSourceID rather than using a configured value.
+    /// Advertised as the V bit of the SPB-Inst Sub-TLV.
+    pub spsource_id_auto: bool,
+    /// Explicitly configured 20-bit SPSourceID.
+    pub spsource_id: Option<u32>,
+    /// Identity of the SPT Region, advertised in the SPB-MCID Sub-TLV.
+    pub region: SpbRegionCfg,
+    /// Whether to program an external dataplane.
+    pub dataplane_enabled: bool,
+    /// Unix socket of the dataplane agent.
+    pub dataplane_socket: String,
+    /// Tree sets, keyed by Base VID.
+    pub trees: BTreeMap<u16, SpbTreeCfg>,
     pub services: BTreeMap<SpbServiceKey, SpbServiceCfg>,
+}
+
+/// Identity of the SPT Region.
+#[derive(Clone, Debug, Default)]
+pub struct SpbRegionCfg {
+    pub name: String,
+    pub revision: u16,
+    /// 16-byte configuration digest, as configured.
+    pub config_digest: [u8; 16],
+}
+
+/// Configuration for one SPB tree set.
+#[derive(Clone, Copy, Debug)]
+pub struct SpbTreeCfg {
+    /// Index of the standard IEEE 802.1 ECT-ALGORITHM, 1 through 16.
+    pub algorithm: u8,
+    /// The M bit: whether this Base VID carries multicast.
+    pub multicast: bool,
+    /// Shortest Path VID, SPBV mode only.
+    pub spvid: Option<u16>,
 }
 
 /// Key for SPB service entries (B-MAC + Base VID).
@@ -201,6 +238,7 @@ pub enum InstanceTraceOption {
     PacketsPsnp,
     PacketsCsnp,
     PacketsLsp,
+    Spb,
     Spf,
 }
 
@@ -210,6 +248,7 @@ pub struct InstanceTraceOptions {
     pub ibus: bool,
     pub lsdb: bool,
     pub packets: TraceOptionPacket,
+    pub spb: bool,
     pub spf: bool,
 }
 
@@ -264,7 +303,30 @@ pub struct InterfaceCfg {
     pub mt: HashMap<MtId, InterfaceMtCfg>,
     pub asla: BTreeMap<StandardApp, InterfaceAslaCfg>,
     pub ext_seqnum_mode: LevelsCfg<Option<ExtendedSeqNumMode>>,
+    pub spb: InterfaceSpbCfg,
     pub trace_opts: InterfaceTraceOptions,
+}
+
+/// Per-interface SPB configuration.
+#[derive(Debug)]
+pub struct InterfaceSpbCfg {
+    pub enabled: bool,
+    /// 24-bit SPB link metric advertised in the SPB-Metric Sub-TLV.
+    pub link_metric: u32,
+    pub port_ids: BTreeSet<u16>,
+    /// Whether this interface faces the backbone or a customer.
+    pub role: SpbInterfaceRole,
+    /// Services carried on a customer-facing interface.
+    pub uni_isids: BTreeSet<u32>,
+}
+
+/// Which side of the network an SPB interface faces.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SpbInterfaceRole {
+    /// Carries encapsulated frames between bridges.
+    Backbone,
+    /// Frames are encapsulated on ingress and decapsulated on egress.
+    Customer,
 }
 
 #[derive(Debug)]
@@ -590,6 +652,65 @@ fn apply_instance(instance: &mut Instance, change: ConfigChange, event_queue: &m
         }
         ConfigChange::SpbEnable(enable) => {
             instance.config.spb.enabled = enable;
+            for level in LevelType::All {
+                event_queue.insert(Event::ReoriginateLsps(level));
+            }
+            event_queue.insert(Event::SpbRecompute);
+        }
+        ConfigChange::SpbBridgePriority(priority) => {
+            instance.config.spb.bridge_priority = priority;
+            for level in LevelType::All {
+                event_queue.insert(Event::ReoriginateLsps(level));
+            }
+            event_queue.insert(Event::SpbRecompute);
+        }
+        ConfigChange::SpbSpsourceIdAuto(auto) => {
+            instance.config.spb.spsource_id_auto = auto;
+            for level in LevelType::All {
+                event_queue.insert(Event::ReoriginateLsps(level));
+            }
+            event_queue.insert(Event::SpbRecompute);
+        }
+        ConfigChange::SpbSpsourceIdValue(spsource_id) => {
+            instance.config.spb.spsource_id = spsource_id;
+            for level in LevelType::All {
+                event_queue.insert(Event::ReoriginateLsps(level));
+            }
+            event_queue.insert(Event::SpbRecompute);
+        }
+        ConfigChange::SpbRegionName(name) => {
+            instance.config.spb.region.name = name.unwrap_or_default();
+            event_queue.insert(Event::SpbRecompute);
+        }
+        ConfigChange::SpbRegionRevision(revision) => {
+            instance.config.spb.region.revision = revision;
+            event_queue.insert(Event::SpbRecompute);
+        }
+        ConfigChange::SpbRegionConfigDigest(digest) => {
+            // The YANG length constraint already limits this to 16 bytes;
+            // a shorter value is zero-padded rather than rejected here.
+            let mut config_digest = [0u8; 16];
+            if let Some(HexString(bytes)) = &digest {
+                let len = bytes.len().min(16);
+                config_digest[..len].copy_from_slice(&bytes[..len]);
+            }
+            instance.config.spb.region.config_digest = config_digest;
+            event_queue.insert(Event::SpbRecompute);
+        }
+        ConfigChange::SpbDataplaneEnable(enable) => {
+            instance.config.spb.dataplane_enabled = enable;
+            event_queue.insert(Event::SpbRecompute);
+        }
+        ConfigChange::SpbDataplaneSocketPath(path) => {
+            instance.config.spb.dataplane_socket = path;
+            event_queue.insert(Event::SpbRecompute);
+        }
+        ConfigChange::SpbTree(keys, change) => {
+            apply_spb_tree(instance, keys.base_vid, change)?;
+            for level in LevelType::All {
+                event_queue.insert(Event::ReoriginateLsps(level));
+            }
+            event_queue.insert(Event::SpbRecompute);
         }
         ConfigChange::SpbService(keys, change) => {
             let Ok(bmac) = keys.bmac.parse::<MacAddr>() else {
@@ -600,6 +721,10 @@ fn apply_instance(instance: &mut Instance, change: ConfigChange, event_queue: &m
                 base_vid: keys.base_vid,
             };
             apply_spb_service(instance, key, change)?;
+            for level in LevelType::All {
+                event_queue.insert(Event::ReoriginateLsps(level));
+            }
+            event_queue.insert(Event::SpbRecompute);
         }
         ConfigChange::IsisLinkAttrLegacy(op) => {
             if op == ConfigOp::Create {
@@ -786,6 +911,51 @@ fn apply_interface(instance: &mut Instance, ifname: &str, change: InterfaceChang
                 InterfaceEntryChange::CsnpInterval(csnp_interval) => {
                     iface.config.csnp_interval = csnp_interval;
                     event_queue.insert(Event::InterfaceUpdateCsnpInterval(iface_idx));
+                }
+                InterfaceEntryChange::SpbEnable(enable) => {
+                    let iface = &mut instance.arenas.interfaces[iface_idx];
+                    iface.config.spb.enabled = enable;
+                    for level in LevelType::All {
+                        event_queue.insert(Event::ReoriginateLsps(level));
+                    }
+                }
+                InterfaceEntryChange::SpbLinkMetric(metric) => {
+                    let iface = &mut instance.arenas.interfaces[iface_idx];
+                    iface.config.spb.link_metric = metric;
+                    for level in LevelType::All {
+                        event_queue.insert(Event::ReoriginateLsps(level));
+                    }
+                }
+                InterfaceEntryChange::SpbPortIdentifier(op, port_id) => {
+                    let iface = &mut instance.arenas.interfaces[iface_idx];
+                    match op {
+                        ConfigOp::Create => {
+                            iface.config.spb.port_ids.insert(port_id);
+                        }
+                        ConfigOp::Delete => {
+                            iface.config.spb.port_ids.remove(&port_id);
+                        }
+                    }
+                    for level in LevelType::All {
+                        event_queue.insert(Event::ReoriginateLsps(level));
+                    }
+                }
+                InterfaceEntryChange::SpbRole(role) => {
+                    let iface = &mut instance.arenas.interfaces[iface_idx];
+                    iface.config.spb.role = role;
+                    event_queue.insert(Event::SpbRecompute);
+                }
+                InterfaceEntryChange::SpbUniService(keys, change) => {
+                    let iface = &mut instance.arenas.interfaces[iface_idx];
+                    match change {
+                        InterfaceSpbUniServiceChange::Create => {
+                            iface.config.spb.uni_isids.insert(keys.i_sid);
+                        }
+                        InterfaceSpbUniServiceChange::Delete => {
+                            iface.config.spb.uni_isids.remove(&keys.i_sid);
+                        }
+                    }
+                    event_queue.insert(Event::SpbRecompute);
                 }
                 InterfaceEntryChange::CsnpDisable(csnp_disable) => {
                     if let Some(csnp_disable) = csnp_disable {
@@ -1149,6 +1319,7 @@ fn apply_trace_options(instance: &mut Instance, trace_opt: InstanceTraceOption, 
             InstanceTraceOption::FloodReduction => trace_opts.flood_reduction = true,
             InstanceTraceOption::InternalBus => trace_opts.ibus = true,
             InstanceTraceOption::Lsdb => trace_opts.lsdb = true,
+            InstanceTraceOption::Spb => trace_opts.spb = true,
             InstanceTraceOption::Spf => trace_opts.spf = true,
             InstanceTraceOption::PacketsAll => {
                 trace_opts.packets.all.get_or_insert_default();
@@ -1170,6 +1341,7 @@ fn apply_trace_options(instance: &mut Instance, trace_opt: InstanceTraceOption, 
             InstanceTraceOption::FloodReduction => trace_opts.flood_reduction = false,
             InstanceTraceOption::InternalBus => trace_opts.ibus = false,
             InstanceTraceOption::Lsdb => trace_opts.lsdb = false,
+            InstanceTraceOption::Spb => trace_opts.spb = false,
             InstanceTraceOption::Spf => trace_opts.spf = false,
             InstanceTraceOption::PacketsAll => trace_opts.packets.all = None,
             InstanceTraceOption::PacketsHello => trace_opts.packets.hello = None,
@@ -1200,6 +1372,33 @@ fn apply_trace_options(instance: &mut Instance, trace_opt: InstanceTraceOption, 
         }
     }
     event_queue.insert(Event::UpdateTraceOptions);
+
+    Ok(())
+}
+
+fn apply_spb_tree(instance: &mut Instance, base_vid: u16, change: SpbTreeChange) -> Result<(), ApplyError> {
+    match change {
+        SpbTreeChange::Create => {
+            instance.config.spb.trees.insert(base_vid, SpbTreeCfg::default());
+        }
+        SpbTreeChange::Delete => {
+            instance.config.spb.trees.remove(&base_vid);
+        }
+        SpbTreeChange::Entry(change) => {
+            let tree = instance.config.spb.trees.get_mut(&base_vid).ok_or(ApplyError::EntryNotFound)?;
+            match change {
+                SpbTreeEntryChange::Algorithm(algorithm) => {
+                    tree.algorithm = algorithm;
+                }
+                SpbTreeEntryChange::Multicast(multicast) => {
+                    tree.multicast = multicast;
+                }
+                SpbTreeEntryChange::Spvid(spvid) => {
+                    tree.spvid = spvid;
+                }
+            }
+        }
+    }
 
     Ok(())
 }
@@ -1386,6 +1585,15 @@ fn process_event(instance: &mut Instance, event: Event) {
                 for level in instance.config.levels() {
                     instance.tx.protocol_input.spf_delay_event(level, spf::fsm::Event::ConfigChange);
                 }
+            }
+        }
+        Event::SpbRecompute => {
+            if let Some((mut instance, arenas)) = instance.as_up() {
+                for level in instance.config.levels() {
+                    crate::spb::recompute(level, &mut instance, &arenas.interfaces, &arenas.adjacencies, &arenas.lsp_entries);
+                }
+                crate::spb::refresh_hellos(&mut instance, &mut arenas.interfaces);
+                {}
             }
         }
         Event::ReinstallRoutes => {
@@ -1812,6 +2020,51 @@ impl Default for InstanceBierCfg {
     }
 }
 
+impl Default for InterfaceSpbCfg {
+    fn default() -> Self {
+        let enabled = isis::interfaces::interface::spb::enable::DFLT;
+        let link_metric = isis::interfaces::interface::spb::link_metric::DFLT;
+        let role = isis::interfaces::interface::spb::role::DFLT;
+        Self {
+            enabled,
+            link_metric,
+            port_ids: Default::default(),
+            role: TryFromYang::try_from_yang(role).unwrap(),
+            uni_isids: Default::default(),
+        }
+    }
+}
+
+impl Default for InstanceSpbCfg {
+    fn default() -> Self {
+        let bridge_priority = isis::spb::bridge_priority::DFLT;
+        let spsource_id_auto = isis::spb::spsource_id::auto::DFLT;
+        Self {
+            enabled: isis::spb::enable::DFLT,
+            bridge_priority,
+            spsource_id_auto,
+            spsource_id: None,
+            region: Default::default(),
+            dataplane_enabled: isis::spb::dataplane::enable::DFLT,
+            dataplane_socket: isis::spb::dataplane::socket_path::DFLT.to_owned(),
+            trees: Default::default(),
+            services: Default::default(),
+        }
+    }
+}
+
+impl Default for SpbTreeCfg {
+    fn default() -> Self {
+        let algorithm = isis::spb::tree::algorithm::DFLT;
+        let multicast = isis::spb::tree::multicast::DFLT;
+        Self {
+            algorithm,
+            multicast,
+            spvid: None,
+        }
+    }
+}
+
 impl Default for SpbIsidCfg {
     fn default() -> Self {
         let transmit = isis::spb::service::isid::transmit::DFLT;
@@ -1912,6 +2165,7 @@ impl Default for InterfaceCfg {
             mt: Default::default(),
             asla: Default::default(),
             ext_seqnum_mode: Default::default(),
+            spb: Default::default(),
             trace_opts: Default::default(),
         }
     }

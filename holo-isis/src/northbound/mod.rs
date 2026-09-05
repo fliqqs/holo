@@ -25,7 +25,7 @@ pub mod yang_gen {
     use crate::adjacency::AdjacencyState;
     use crate::interface::InterfaceType;
     use crate::lsdb::LspLogReason;
-    use crate::northbound::configuration::{ExtendedSeqNumMode, InstanceTraceOption, InterfaceTraceOption, MetricType, StandardApp};
+    use crate::northbound::configuration::{ExtendedSeqNumMode, InstanceTraceOption, InterfaceTraceOption, MetricType, SpbInterfaceRole, StandardApp};
     use crate::packet::iana::{FloodingAlgo, IgpAlgoType, IgpMetricType, MtId};
     use crate::packet::{AreaAddr, LanId, LevelNumber, LevelType, LspId, SystemId};
     use crate::spf::{self, SpfType};

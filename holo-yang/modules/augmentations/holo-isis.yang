@@ -243,6 +243,7 @@ module holo-isis {
             enum packets-psnp;
             enum packets-csnp;
             enum packets-lsp;
+            enum spb;
             enum spf;
           }
         }
@@ -324,6 +325,75 @@ module holo-isis {
         + "isis:interfaces/isis:interface" {
     description
       "IS-IS interface augmentations";
+
+    container spb {
+      description
+        "Shortest Path Bridging parameters for this interface.";
+      reference
+        "RFC 6329: IS-IS Extensions Supporting IEEE 802.1aq
+         Shortest Path Bridging";
+      leaf enable {
+        type boolean;
+        default "false";
+        description
+          "Enables SPB on this interface. When enabled, an SPB-Metric
+           Sub-TLV is advertised for the adjacency, which is what makes
+           the adjacency eligible to carry SPB traffic.";
+        reference
+          "RFC 6329, Section 15.1: SPB Link Metric (SPB-Metric) Sub-TLV";
+      }
+      leaf link-metric {
+        type uint32 {
+          range "0..16777215";
+        }
+        default "10";
+        description
+          "24-bit SPB link metric advertised for this interface. SPB path
+           computation uses the maximum of the two ends' advertised
+           metrics, so a mismatch resolves to the larger value rather
+           than producing asymmetric paths.";
+        reference
+          "RFC 6329, Section 11: Shortest Path Default Tie-Breaking";
+      }
+      leaf-list port-identifier {
+        type uint16;
+        description
+          "Port identifiers advertised in the SPB-Metric Sub-TLV for
+           this interface.";
+      }
+      leaf role {
+        type enumeration {
+          enum backbone {
+            description
+              "Backbone-facing (NNI): carries encapsulated frames between
+               bridges.";
+          }
+          enum customer {
+            description
+              "Customer-facing (UNI): frames are encapsulated on ingress
+               and decapsulated on egress.";
+          }
+        }
+        default "backbone";
+        description
+          "Whether this interface faces the backbone or a customer. It
+           determines which forwarding behaviour the data plane applies to
+           the port.";
+      }
+      list uni-service {
+        when "../role = 'customer'";
+        key "i-sid";
+        description
+          "Services carried on this customer-facing interface.";
+        leaf i-sid {
+          type uint32 {
+            range "0..16777215";
+          }
+          description
+            "Service instance this interface belongs to.";
+        }
+      }
+    }
 
     leaf csnp-disable {
       when "../isis:interface-type = 'point-to-point'";
@@ -496,6 +566,96 @@ module holo-isis {
       description
         "List of supported protocols of the IS-IS node.
          The IS-IS reference is TLV 129.";
+    }
+    container spb {
+      description
+        "SPB parameters received from this neighbour.";
+      reference
+        "RFC 6329, Section 13: SPB Sub-TLVs carried in IIH PDUs";
+      leaf capable {
+        type boolean;
+        description
+          "Whether the neighbour advertises NLPID 0xC1, indicating SPB
+           support.";
+      }
+      leaf bidirectional {
+        type boolean;
+        description
+          "Whether SPB is enabled locally and the neighbour advertises SPB
+           support, so the adjacency can carry SPB traffic.";
+      }
+      leaf agreement {
+        type enumeration {
+          enum agreed;
+          enum no-digest;
+          enum not-valid;
+          enum digest-mismatch;
+          enum outstanding;
+        }
+        description
+          "Whether this neighbour agrees with our view of the topology.
+           Multicast forwarding for a tree whose shape changed is held back
+           until every adjacency is in agreement.";
+        reference
+          "RFC 6329, Section 13.2: SPB-Digest Sub-TLV";
+      }
+      leaf agreement-number {
+        type uint8 {
+          range "0..3";
+        }
+        description
+          "Agreement Number the neighbour is advertising.";
+      }
+      leaf discarded-agreement-number {
+        type uint8 {
+          range "0..3";
+        }
+        description
+          "Agreement Number the neighbour has most recently discarded. Our
+           own number is not acknowledged until this catches up with it.";
+      }
+      leaf region-match {
+        type boolean;
+        description
+          "Whether the neighbour's SPB-MCID identifies the same SPT Region
+           as ours. False means the two bridges are configured for
+           different regions, which is a misconfiguration rather than a
+           transient disagreement.";
+        reference
+          "RFC 6329, Section 13.1: SPB-MCID Sub-TLV";
+      }
+      list ect-vid {
+        key "base-vid";
+        description
+          "ECT algorithm and Base VID pairs the neighbour advertises in
+           its SPB-B-VID Sub-TLV. Under stable conditions these match the
+           local ones; a difference indicates misconfiguration.";
+        reference
+          "RFC 6329, Section 13.3: SPB Base VLAN Identifiers Sub-TLV";
+        leaf base-vid {
+          type uint16 {
+            range "0..4095";
+          }
+          description
+            "Base VID advertised by the neighbour.";
+        }
+        leaf ect-algorithm {
+          type uint32;
+          description
+            "ECT-ALGORITHM paired with that Base VID.";
+        }
+        leaf use {
+          type boolean;
+          description
+            "U bit: the pair is in use by the neighbour or by some bridge
+             in its LSDB.";
+        }
+        leaf multicast {
+          type boolean;
+          description
+            "M bit: the Base VID carries multicast.";
+        }
+      }
     }
     leaf-list topologies {
       type uint16 {
@@ -688,6 +848,140 @@ module holo-isis {
         reference
           "RFC 6329, Section 13: Shortest Path Bridging NLPID";
       }
+      leaf bridge-priority {
+        type uint16;
+        default "32768";
+        description
+          "Bridge Priority, forming the high-order two bytes of the
+           BridgeID whose low-order six bytes are the IS-IS System ID.
+           Because the BridgeID is the basis of ECT tie-breaking, this
+           leaf gives the operator direct control over which equal-cost
+           path is selected.";
+        reference
+          "RFC 6329, Section 11: Shortest Path Default Tie-Breaking";
+      }
+      container spsource-id {
+        description
+          "SPSourceID allocation. The SPSourceID occupies the upper 20
+           bits of the multicast destination addresses of frames
+           originated by this node.";
+        reference
+          "RFC 6329, Section 14.1: SPB Instance (SPB-Inst) Sub-TLV";
+        leaf auto {
+          type boolean;
+          default "true";
+          description
+            "Allocate the SPSourceID automatically rather than using a
+             configured value. This is advertised as the V bit of the
+             SPB-Inst Sub-TLV.";
+        }
+        leaf value {
+          when "../auto = 'false'";
+          type uint32 {
+            range "0..1048575";
+          }
+          description
+            "Explicitly configured 20-bit SPSourceID. It must be unique
+             within the SPB region; on collision the bridge with the
+             highest priority Bridge Identifier keeps the value and the
+             others must reallocate.";
+        }
+      }
+      container region {
+        description
+          "Identity of the SPT Region, advertised in the SPB-MCID Sub-TLV.
+           It must be configured identically on every bridge in the region;
+           a mismatch means two bridges believe they are in different
+           regions and is reported per adjacency.";
+        reference
+          "RFC 6329, Section 13.1: SPB-MCID Sub-TLV";
+        leaf name {
+          type string {
+            length "0..32";
+          }
+          description
+            "Configuration name of the region.";
+        }
+        leaf revision {
+          type uint16;
+          default "0";
+          description
+            "Revision level of the region's configuration.";
+        }
+        leaf config-digest {
+          type yang:hex-string {
+            length "47";
+          }
+          description
+            "16-byte configuration digest of the region's VID allocation.
+             Its computation is defined by IEEE 802.1Q; it is configured
+             rather than derived here.";
+        }
+      }
+      container dataplane {
+        description
+          "Connection to an external SPB dataplane, which is programmed with
+           the computed forwarding tables.";
+        leaf enable {
+          type boolean;
+          default "false";
+          description
+            "Enables programming of an external dataplane. With this
+             disabled, SPB is computed and exposed as state but nothing is
+             forwarded.";
+        }
+        leaf socket-path {
+          type string;
+          default "/var/run/spb-dp.sock";
+          description
+            "Unix socket of the dataplane agent.";
+        }
+      }
+      list tree {
+        key "base-vid";
+        description
+          "Tree sets operated by this SPB instance, each identified by a
+           Base VID and built by an ECT algorithm. Advertised as the
+           VLAN-ID tuples of the SPB-Inst Sub-TLV.";
+        reference
+          "RFC 6329, Section 14.1: SPB Instance (SPB-Inst) Sub-TLV";
+        leaf base-vid {
+          type uint16 {
+            range "0..4095";
+          }
+          description
+            "Base VID associated with this SPT Set.";
+        }
+        leaf algorithm {
+          type uint8 {
+            range "1..16";
+          }
+          default "1";
+          description
+            "Index of the standard IEEE 802.1 ECT-ALGORITHM used to build
+             this tree set, selecting one of 00-80-C2-01 through
+             00-80-C2-10. Index 1 is the default algorithm, which picks
+             the path through the intermediate node with the lowest
+             BridgeID.";
+          reference
+            "RFC 6329, Section 12: Shortest Path ECT";
+        }
+        leaf multicast {
+          type boolean;
+          default "true";
+          description
+            "Whether this Base VID carries multicast, advertised as the M
+             bit of the VLAN-ID tuple.";
+        }
+        leaf spvid {
+          type uint16 {
+            range "0..4095";
+          }
+          description
+            "Shortest Path VID, used in SPBV mode only. Its presence is
+             advertised as the A bit of the VLAN-ID tuple.";
+        }
+      }
       list service {
         key "bmac base-vid";
         description
@@ -740,6 +1034,291 @@ module holo-isis {
             description
               "R bit: When true, indicates receive membership for
                this I-SID. The node will receive frames for this
+               service.";
+          }
+        }
+      }
+    }
+  }
+
+  augment "/rt:routing/rt:control-plane-protocols/"
+        + "rt:control-plane-protocol/isis:isis/holo-isis:spb" {
+    description
+      "Augments SPB configuration with the results of SPB computation.";
+    container computed {
+      config false;
+      description
+        "Shortest path trees and forwarding state derived from the SPB
+         topology. This is what an external data plane is programmed with,
+         and what offline tooling reads to reconstruct the topology.";
+      leaf trees {
+        type uint32;
+        description
+          "Number of shortest path trees currently computed.";
+      }
+      leaf trees-skipped {
+        type uint32;
+        description
+          "Number of trees that were not computed because the internal
+           tree limit was reached. A non-zero value means forwarding is
+           incomplete.";
+      }
+      leaf generation {
+        type uint64;
+        description
+          "Monotonic generation of the forwarding state, incremented
+           whenever it changes. Used to reconcile with a data plane after
+           either side restarts.";
+      }
+      leaf digest {
+        type yang:hex-string;
+        description
+          "Our agreement digest: a summary of the topology that neighbours
+           must match before multicast forwarding is updated.
+
+           Its computation is defined by IEEE 802.1aq, which was not
+           available; this is Holo's own and interoperates only with other
+           Holo nodes.";
+        reference
+          "RFC 6329, Section 13.2";
+      }
+      leaf agreement-number {
+        type uint8 {
+          range "0..3";
+        }
+        description
+          "Our Agreement Number, advanced whenever the digest changes.";
+      }
+      leaf agreed {
+        type boolean;
+        description
+          "Whether every SPB adjacency currently agrees with us.";
+      }
+      leaf trees-withheld {
+        type uint32;
+        description
+          "Trees whose multicast forwarding is being held back because
+           their distance to the root changed and agreement has not yet
+           been reached.";
+      }
+      leaf last-computation-duration {
+        type uint32;
+        units "microseconds";
+        description
+          "Duration of the most recent SPB computation.";
+      }
+      list spsource-id-conflict {
+        key "spsource-id";
+        description
+          "SPSourceID values advertised by more than one node. The listed
+           nodes lost the conflict and must reallocate; the node with the
+           highest priority Bridge Identifier keeps the value.";
+        reference
+          "RFC 6329, Section 14.1: SPB Instance (SPB-Inst) Sub-TLV";
+        leaf spsource-id {
+          type uint32 {
+            range "0..1048575";
+          }
+          description
+            "The contended SPSourceID.";
+        }
+        leaf-list loser {
+          type isis:system-id;
+          description
+            "Nodes that must reallocate their SPSourceID.";
+        }
+      }
+      list tree {
+        key "base-vid root";
+        description
+          "One shortest path tree, identified by its Base VID and root.
+           The tree rooted at the local node drives unicast forwarding;
+           trees rooted at remote multicast sources determine which
+           branches the local node replicates onto.";
+        leaf base-vid {
+          type uint16 {
+            range "0..4095";
+          }
+          description
+            "Base VID of the tree set.";
+        }
+        leaf root {
+          type isis:system-id;
+          description
+            "Node this tree is rooted at.";
+        }
+        leaf algorithm {
+          type uint32;
+          description
+            "ECT-ALGORITHM used to build this tree.";
+        }
+        list node {
+          key "system-id";
+          description
+            "Nodes reachable on this tree.";
+          leaf system-id {
+            type isis:system-id;
+            description
+              "The reachable node.";
+          }
+          leaf cost {
+            type uint32;
+            description
+              "Accumulated SPB cost from the root, using the maximum of
+               each link's two advertised metrics.";
+          }
+          leaf hops {
+            type uint16;
+            description
+              "Hop count from the root.";
+          }
+          leaf parent {
+            type isis:system-id;
+            description
+              "The node one hop closer to the root. There is exactly one,
+               since SPB selects a single path rather than an ECMP set.";
+          }
+          leaf first-hop {
+            type isis:system-id;
+            description
+              "The root's neighbour on the path to this node.";
+          }
+          leaf path-id {
+            type string;
+            description
+              "The tie-breaking identity of the selected path: the sorted
+               set of ECT-masked BridgeIDs of the nodes it traverses.
+               Two paths are compared by cost, then hop count, then this
+               value.";
+            reference
+              "RFC 6329, Sections 11 and 12";
+          }
+        }
+      }
+      list unicast {
+        key "base-vid bmac";
+        description
+          "Unicast forwarding entries. The same table answers the
+           mandatory ingress check: a frame arriving with a given
+           {B-SA, B-VID} must have come from the node named here.";
+        reference
+          "RFC 6329, Section 4.2";
+        leaf base-vid {
+          type uint16 {
+            range "0..4095";
+          }
+          description
+            "Base VID of the entry.";
+        }
+        leaf bmac {
+          type yang:mac-address;
+          description
+            "Destination B-MAC.";
+        }
+        leaf owner {
+          type isis:system-id;
+          description
+            "Node that advertised this B-MAC.";
+        }
+        leaf nexthop {
+          type isis:system-id;
+          description
+            "Adjacent node to forward through. Absent when the B-MAC is
+             local.";
+        }
+        leaf cost {
+          type uint32;
+          description
+            "SPB cost to the owning node.";
+        }
+      }
+      list multicast {
+        key "base-vid group-bmac";
+        description
+          "Multicast forwarding entries, one per (S, G) tree the local
+           node participates in.";
+        reference
+          "RFC 6329, Section 4.4";
+        leaf base-vid {
+          type uint16 {
+            range "0..4095";
+          }
+          description
+            "Base VID of the entry.";
+        }
+        leaf group-bmac {
+          type yang:mac-address;
+          description
+            "Group B-MAC, formed from the source's SPSourceID and the
+             I-SID.";
+        }
+        leaf source {
+          type isis:system-id;
+          description
+            "Node that roots this distribution tree.";
+        }
+        leaf i-sid {
+          type uint32 {
+            range "0..16777215";
+          }
+          description
+            "Service instance carried by this tree.";
+        }
+        leaf local-deliver {
+          type boolean;
+          description
+            "Whether the local node decapsulates and delivers to its own
+             customer ports for this tree.";
+        }
+        leaf-list branch {
+          type isis:system-id;
+          description
+            "Downstream branches the local node replicates onto: its
+             children on the tree rooted at the source.";
+        }
+      }
+      list service {
+        key "i-sid";
+        description
+          "Service instances known in the region, with the local
+           transmit/receive membership and the remote members.";
+        leaf i-sid {
+          type uint32 {
+            range "0..16777215";
+          }
+          description
+            "24-bit service instance identifier.";
+        }
+        leaf base-vid {
+          type uint16 {
+            range "0..4095";
+          }
+          description
+            "Base VID carrying this service.";
+        }
+        leaf transmit {
+          type boolean;
+          description
+            "Whether the local node transmits into this service.";
+        }
+        leaf receive {
+          type boolean;
+          description
+            "Whether the local node receives from this service.";
+        }
+        list member {
+          key "system-id";
+          description
+            "Remote nodes participating in this service.";
+          leaf system-id {
+            type isis:system-id;
+            description
+              "The participating node.";
+          }
+          leaf bmac {
+            type yang:mac-address;
+            description
+              "B-MAC through which that node is reached for this
                service.";
           }
         }
@@ -847,6 +1426,88 @@ module holo-isis {
         description
           "O-bit: When set, indicates the originating node is in
            overload state for this topology.";
+      }
+      container spb-instance {
+        presence "The SPB-Inst Sub-TLV is present in this TLV.";
+        description
+          "SPB-Inst Sub-TLV (type 1) entry, carrying the originating
+           node's SPSourceID, Bridge Priority and tree sets.";
+        reference
+          "RFC 6329, Section 14.1: SPB Instance (SPB-Inst) Sub-TLV";
+        leaf cist-root-id {
+          type uint64;
+          description
+            "CIST Root Identifier of the originating node's SPT Region.";
+        }
+        leaf cist-external-root-path-cost {
+          type uint32;
+          description
+            "CIST External Root Path Cost.";
+        }
+        leaf bridge-priority {
+          type uint16;
+          description
+            "Bridge Priority, the high-order two bytes of the BridgeID
+             used for ECT tie-breaking.";
+        }
+        leaf spsource-id-auto {
+          type boolean;
+          description
+            "V bit: the advertised SPSourceID was auto-allocated rather
+             than configured.";
+        }
+        leaf spsource-id {
+          type uint32 {
+            range "0..1048575";
+          }
+          description
+            "20-bit SPSourceID used to construct the multicast
+             destination addresses of frames originated by this node. The
+             value zero means dynamic allocation has not yet completed.";
+        }
+        list vlan-id-tuple {
+          description
+            "Tree sets advertised by the originating node, each pairing
+             an ECT-ALGORITHM with a Base VID.";
+          leaf ect-algorithm {
+            type uint32;
+            description
+              "ECT-ALGORITHM: an OUI in the top 24 bits and an algorithm
+               index in the low 8 bits. The 16 standard IEEE 802.1
+               algorithms are 00-80-C2-01 through 00-80-C2-10.";
+            reference
+              "RFC 6329, Section 12: Shortest Path ECT";
+          }
+          leaf base-vid {
+            type uint16 {
+              range "0..4095";
+            }
+            description
+              "Base VID associated with this SPT Set.";
+          }
+          leaf spvid {
+            type uint16 {
+              range "0..4095";
+            }
+            description
+              "Shortest Path VID, used in SPBV mode.";
+          }
+          leaf use {
+            type boolean;
+            description
+              "U bit: this ECT-ALGORITHM and Base VID pair is in use.";
+          }
+          leaf multicast {
+            type boolean;
+            description
+              "M bit: this Base VID carries multicast.";
+          }
+          leaf spvid-allocated {
+            type boolean;
+            description
+              "A bit: an SPVID has been allocated for this tuple.";
+          }
+        }
       }
       list spbm-service {
         description

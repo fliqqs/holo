@@ -16,7 +16,7 @@ use crate::adjacency::{AdjacencyEvent, AdjacencyState};
 use crate::error::AdjacencyRejectError;
 use crate::interface::InterfaceType;
 use crate::lsdb::LspLogReason;
-use crate::northbound::configuration::{ExtendedSeqNumMode, InstanceTraceOption, InterfaceTraceOption, MetricType, StandardApp};
+use crate::northbound::configuration::{ExtendedSeqNumMode, InstanceTraceOption, InterfaceTraceOption, MetricType, SpbInterfaceRole, StandardApp};
 use crate::packet::iana::{AslaSabmFlags, FadFlags, FloodingAlgo, IgpAlgoType, IgpMetricType, MtId};
 use crate::packet::pdu::LspFlags;
 use crate::packet::subtlvs::capability::SrCapabilitiesFlags;
@@ -480,6 +480,25 @@ impl TryFromYang for StandardApp {
     }
 }
 
+impl ToYang for SpbInterfaceRole {
+    fn to_yang(&self) -> Cow<'static, str> {
+        match self {
+            SpbInterfaceRole::Backbone => "backbone".into(),
+            SpbInterfaceRole::Customer => "customer".into(),
+        }
+    }
+}
+
+impl TryFromYang for SpbInterfaceRole {
+    fn try_from_yang(value: &str) -> Option<SpbInterfaceRole> {
+        match value {
+            "backbone" => Some(SpbInterfaceRole::Backbone),
+            "customer" => Some(SpbInterfaceRole::Customer),
+            _ => None,
+        }
+    }
+}
+
 impl TryFromYang for InstanceTraceOption {
     fn try_from_yang(value: &str) -> Option<InstanceTraceOption> {
         match value {
@@ -491,6 +510,7 @@ impl TryFromYang for InstanceTraceOption {
             "packets-psnp" => Some(InstanceTraceOption::PacketsPsnp),
             "packets-csnp" => Some(InstanceTraceOption::PacketsCsnp),
             "packets-lsp" => Some(InstanceTraceOption::PacketsLsp),
+            "spb" => Some(InstanceTraceOption::Spb),
             "spf" => Some(InstanceTraceOption::Spf),
             _ => None,
         }

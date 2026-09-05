@@ -138,6 +138,13 @@ static IDENTITY_TYPES: &[(&str, TypeSpec)] = &[
 // IS-IS-specific YANG leaf types.
 static LEAF_TYPES: &[(&str, TypeSpec)] = &[
     (
+        "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-isis:isis/interfaces/interface/holo-isis:spb/role",
+        TypeSpec {
+            rust_type: "SpbInterfaceRole",
+            copy_semantics: true,
+        },
+    ),
+    (
         "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-isis:isis/interfaces/interface/ietf-isis-link-attr:isis-asla/interface-asla/link-attr-app",
         TypeSpec {
             rust_type: "StandardApp",

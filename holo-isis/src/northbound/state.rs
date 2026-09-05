@@ -33,7 +33,7 @@ use crate::packet::iana::{IgpAlgoType, IgpMetricType};
 use crate::packet::subtlvs::capability::{FadStlv, FapmStlv, LabelBlockEntry};
 use crate::packet::subtlvs::neighbor::{AdjSidStlv, AslaStlv};
 use crate::packet::subtlvs::prefix::{PrefixAttrFlags, PrefixSidStlv};
-use crate::packet::subtlvs::spb::{IsidEntry, IsidFlags, SpbmSiStlv};
+use crate::packet::subtlvs::spb::{EctVidFlags, EctVidTuple, IsidEntry, IsidFlags, SpbInstStlv, SpbMcidStlv, SpbmSiStlv, VlanIdTuple, VlanIdTupleFlags};
 use crate::packet::tlv::{AuthenticationTlv, IpReachTlvEntry, Ipv4Reach, Ipv6Reach, IsReach, LegacyIpv4Reach, LegacyIsReach, MtCapabilityTlv, MultiTopologyEntry, RouterCapTlv, UnknownTlv};
 use crate::packet::{LanId, LevelNumber, LevelType, SystemId};
 use crate::route::{Nexthop, Route};
@@ -2027,6 +2027,43 @@ impl<'a> YangList<'a, Instance> for isis::database::levels::lsp::mt_capability::
     }
 }
 
+impl<'a> YangContainer<'a, Instance> for isis::database::levels::lsp::mt_capability::spb_instance::SpbInstance {
+    type ParentListEntry = &'a MtCapabilityTlv;
+
+    fn new(_instance: &'a Instance, mt_cap: &Self::ParentListEntry) -> Option<Self> {
+        let spb_inst = mt_cap.sub_tlvs.spb_inst.as_ref()?;
+        Some(Self {
+            cist_root_id: Some(spb_inst.cist_root_id),
+            cist_external_root_path_cost: Some(spb_inst.cist_ext_root_path_cost),
+            bridge_priority: Some(spb_inst.bridge_priority),
+            spsource_id_auto: Some(spb_inst.spsource_id_auto),
+            spsource_id: Some(spb_inst.spsource_id),
+        })
+    }
+}
+
+impl<'a> YangList<'a, Instance> for isis::database::levels::lsp::mt_capability::spb_instance::vlan_id_tuple::VlanIdTuple {
+    type ParentListEntry = &'a MtCapabilityTlv;
+    type ListEntry = &'a VlanIdTuple;
+
+    fn iter(_instance: &'a Instance, mt_cap: &Self::ParentListEntry) -> Option<impl ListIterator<'a, Self::ListEntry>> {
+        let spb_inst: &SpbInstStlv = mt_cap.sub_tlvs.spb_inst.as_ref()?;
+        let iter = spb_inst.vlan_id_tuples.iter();
+        Some(iter)
+    }
+
+    fn new(_instance: &'a Instance, tuple: &Self::ListEntry) -> Self {
+        Self {
+            ect_algorithm: Some(tuple.ect_algorithm),
+            base_vid: Some(tuple.base_vid),
+            spvid: Some(tuple.spvid),
+            r#use: Some(tuple.flags.contains(VlanIdTupleFlags::U)),
+            multicast: Some(tuple.flags.contains(VlanIdTupleFlags::M)),
+            spvid_allocated: Some(tuple.flags.contains(VlanIdTupleFlags::A)),
+        }
+    }
+}
+
 impl<'a> YangList<'a, Instance> for isis::database::levels::lsp::mt_capability::spbm_service::SpbmService<'a> {
     type ParentListEntry = &'a MtCapabilityTlv;
     type ListEntry = &'a SpbmSiStlv;
@@ -2058,6 +2095,188 @@ impl<'a> YangList<'a, Instance> for isis::database::levels::lsp::mt_capability::
             value: Some(isid.isid),
             transmit: Some(isid.flags.contains(IsidFlags::T)),
             receive: Some(isid.flags.contains(IsidFlags::R)),
+        }
+    }
+}
+
+// ===== SPB computed state =====
+
+// Renders an agreement verdict as its YANG enumeration value.
+fn agreement_to_yang(verdict: holo_spb::digest::Agreement) -> &'static str {
+    use holo_spb::digest::Agreement;
+    match verdict {
+        Agreement::Agreed => "agreed",
+        Agreement::NoDigest => "no-digest",
+        Agreement::NotValid => "not-valid",
+        Agreement::DigestMismatch => "digest-mismatch",
+        Agreement::Outstanding => "outstanding",
+    }
+}
+
+// Converts an SPB node identifier back into an IS-IS System ID.
+fn spb_system_id(node: holo_spb::node::NodeId) -> SystemId {
+    SystemId::from(node.as_bytes())
+}
+
+impl<'a> YangContainer<'a, Instance> for isis::spb::computed::Computed<'a> {
+    type ParentListEntry = ();
+
+    fn new(instance: &'a Instance, _: &Self::ParentListEntry) -> Option<Self> {
+        // Absent unless SPB is enabled, so an instance with no SPB
+        // configuration reports no SPB state at all.
+        if !instance.config.spb.enabled {
+            return None;
+        }
+        let spb = &instance.state.as_ref()?.spb;
+        Some(Self {
+            trees: Some(spb.trees.len() as u32),
+            trees_skipped: Some(spb.trees_skipped as u32),
+            generation: Some(spb.generation),
+            last_computation_duration: spb.last_duration.map(|d| d.as_micros() as u32).ignore_in_testing(),
+            digest: (!spb.agreement.digest.is_empty()).then(|| HexStr(&spb.agreement.digest)),
+            agreement_number: Some(spb.agreement.agreement),
+            agreed: Some(spb.agreed_adjacencies),
+            trees_withheld: Some(spb.unsafe_trees.len() as u32),
+        })
+    }
+}
+
+impl<'a> YangList<'a, Instance> for isis::spb::computed::spsource_id_conflict::SpsourceIdConflict<'a> {
+    type ParentListEntry = ();
+    type ListEntry = (u32, Vec<holo_spb::node::NodeId>);
+
+    fn iter(instance: &'a Instance, _: &Self::ParentListEntry) -> Option<impl ListIterator<'a, Self::ListEntry>> {
+        let view = instance.state.as_ref()?.spb.view.as_ref()?;
+        let iter = view.spsource_id_conflicts().into_iter();
+        Some(iter)
+    }
+
+    fn new(_instance: &'a Instance, (spsource_id, losers): &Self::ListEntry) -> Self {
+        let losers = losers.clone();
+        Self {
+            spsource_id: *spsource_id,
+            loser: Some(Box::new(losers.into_iter().map(spb_system_id))),
+        }
+    }
+}
+
+impl<'a> YangList<'a, Instance> for isis::spb::computed::tree::Tree {
+    type ParentListEntry = ();
+    type ListEntry = (&'a holo_spb::tree::TreeKey, &'a holo_spb::tree::SpbTree);
+
+    fn iter(instance: &'a Instance, _: &Self::ParentListEntry) -> Option<impl ListIterator<'a, Self::ListEntry>> {
+        let spb = &instance.state.as_ref()?.spb;
+        let iter = spb.trees.iter();
+        Some(iter)
+    }
+
+    fn new(_instance: &'a Instance, (key, _tree): &Self::ListEntry) -> Self {
+        Self {
+            base_vid: key.base_vid,
+            root: spb_system_id(key.root),
+            algorithm: Some(key.algorithm.0),
+        }
+    }
+}
+
+impl<'a> YangList<'a, Instance> for isis::spb::computed::tree::node::Node<'a> {
+    type ParentListEntry = (&'a holo_spb::tree::TreeKey, &'a holo_spb::tree::SpbTree);
+    type ListEntry = (&'a holo_spb::node::NodeId, &'a holo_spb::tree::TreeNode);
+
+    fn iter(_instance: &'a Instance, (_, tree): &Self::ParentListEntry) -> Option<impl ListIterator<'a, Self::ListEntry>> {
+        let iter = tree.nodes.iter();
+        Some(iter)
+    }
+
+    fn new(_instance: &'a Instance, (id, entry): &Self::ListEntry) -> Self {
+        Self {
+            system_id: spb_system_id(**id),
+            cost: Some(entry.cost),
+            hops: Some(entry.hops),
+            parent: entry.parent.map(spb_system_id),
+            first_hop: entry.first_hop.map(spb_system_id),
+            path_id: Some(Cow::Owned(entry.path_id.to_string())),
+        }
+    }
+}
+
+impl<'a> YangList<'a, Instance> for isis::spb::computed::unicast::Unicast<'a> {
+    type ParentListEntry = ();
+    type ListEntry = (&'a holo_spb::fdb::UnicastKey, &'a holo_spb::fdb::UnicastEntry);
+
+    fn iter(instance: &'a Instance, _: &Self::ParentListEntry) -> Option<impl ListIterator<'a, Self::ListEntry>> {
+        let spb = &instance.state.as_ref()?.spb;
+        let iter = spb.fdb.unicast.iter();
+        Some(iter)
+    }
+
+    fn new(_instance: &'a Instance, (key, entry): &Self::ListEntry) -> Self {
+        Self {
+            base_vid: key.base_vid,
+            bmac: Cow::Owned(key.bmac.to_string()),
+            owner: Some(spb_system_id(entry.owner)),
+            nexthop: entry.nexthop.map(spb_system_id),
+            cost: Some(entry.cost),
+        }
+    }
+}
+
+impl<'a> YangList<'a, Instance> for isis::spb::computed::multicast::Multicast<'a> {
+    type ParentListEntry = ();
+    type ListEntry = (&'a holo_spb::fdb::MulticastKey, &'a holo_spb::fdb::MulticastEntry);
+
+    fn iter(instance: &'a Instance, _: &Self::ParentListEntry) -> Option<impl ListIterator<'a, Self::ListEntry>> {
+        let spb = &instance.state.as_ref()?.spb;
+        let iter = spb.fdb.multicast.iter();
+        Some(iter)
+    }
+
+    fn new(_instance: &'a Instance, (key, entry): &Self::ListEntry) -> Self {
+        let branches: Vec<_> = entry.branches.iter().copied().collect();
+        Self {
+            base_vid: key.base_vid,
+            group_bmac: Cow::Owned(key.group_bmac.to_string()),
+            source: Some(spb_system_id(entry.source)),
+            i_sid: Some(entry.isid),
+            local_deliver: Some(entry.local_deliver),
+            branch: Some(Box::new(branches.into_iter().map(spb_system_id))),
+        }
+    }
+}
+
+impl<'a> YangList<'a, Instance> for isis::spb::computed::service::Service {
+    type ParentListEntry = ();
+    type ListEntry = (&'a u32, &'a holo_spb::fdb::ServiceEntry);
+
+    fn iter(instance: &'a Instance, _: &Self::ParentListEntry) -> Option<impl ListIterator<'a, Self::ListEntry>> {
+        let spb = &instance.state.as_ref()?.spb;
+        let iter = spb.fdb.services.iter();
+        Some(iter)
+    }
+
+    fn new(_instance: &'a Instance, (isid, entry): &Self::ListEntry) -> Self {
+        Self {
+            i_sid: **isid,
+            base_vid: Some(entry.base_vid),
+            transmit: Some(entry.transmit),
+            receive: Some(entry.receive),
+        }
+    }
+}
+
+impl<'a> YangList<'a, Instance> for isis::spb::computed::service::member::Member<'a> {
+    type ParentListEntry = (&'a u32, &'a holo_spb::fdb::ServiceEntry);
+    type ListEntry = (&'a holo_spb::node::NodeId, &'a MacAddr);
+
+    fn iter(_instance: &'a Instance, (_, entry): &Self::ParentListEntry) -> Option<impl ListIterator<'a, Self::ListEntry>> {
+        let iter = entry.members.iter();
+        Some(iter)
+    }
+
+    fn new(_instance: &'a Instance, (id, bmac): &Self::ListEntry) -> Self {
+        Self {
+            system_id: spb_system_id(**id),
+            bmac: Some(Cow::Owned(bmac.to_string())),
         }
     }
 }
@@ -2218,6 +2437,59 @@ impl<'a> YangList<'a, Instance> for isis::interfaces::interface::adjacencies::ad
             ipv6_addresses: Some(Box::new(ipv6_addresses)),
             protocol_supported: Some(Box::new(protocol_supported)),
             topologies: Some(Box::new(topologies)),
+        }
+    }
+}
+
+impl<'a> YangContainer<'a, Instance> for isis::interfaces::interface::adjacencies::adjacency::spb::Spb<'a> {
+    type ParentListEntry = &'a Adjacency;
+
+    fn new(instance: &'a Instance, adj: &Self::ParentListEntry) -> Option<Self> {
+        // Reported only when SPB is enabled locally, so a non-SPB instance
+        // shows no SPB adjacency state.
+        if !instance.config.spb.enabled {
+            return None;
+        }
+        let state = instance.state.as_ref();
+        let local = state.map(|state| &state.spb.agreement);
+        let verdict = local.map(|local| holo_spb::digest::evaluate(local, adj.spb_agreement.as_ref()));
+
+        // A region mismatch is only meaningful once the neighbour has told
+        // us which region it is in.
+        let region_match = adj.spb_mcid.as_ref().map(|theirs| {
+            let ours = SpbMcidStlv::from_parts(&instance.config.spb.region.name, instance.config.spb.region.revision, &instance.config.spb.region.config_digest);
+            ours.matches(theirs)
+        });
+
+        Some(Self {
+            capable: Some(adj.is_spb_capable()),
+            bidirectional: Some(adj.is_spb_bidirectional(&instance.config)),
+            agreement: verdict.map(agreement_to_yang).map(Cow::Borrowed),
+            agreement_number: adj.spb_agreement.as_ref().map(|n| n.agreement),
+            discarded_agreement_number: adj.spb_agreement.as_ref().map(|n| n.discarded),
+            region_match,
+        })
+    }
+}
+
+impl<'a> YangList<'a, Instance> for isis::interfaces::interface::adjacencies::adjacency::spb::ect_vid::EctVid {
+    type ParentListEntry = &'a Adjacency;
+    type ListEntry = &'a EctVidTuple;
+
+    fn iter(instance: &'a Instance, adj: &Self::ParentListEntry) -> Option<impl ListIterator<'a, Self::ListEntry>> {
+        if !instance.config.spb.enabled {
+            return None;
+        }
+        let iter = adj.spb_ect_vids.iter();
+        Some(iter)
+    }
+
+    fn new(_instance: &'a Instance, tuple: &Self::ListEntry) -> Self {
+        Self {
+            base_vid: tuple.base_vid,
+            ect_algorithm: Some(tuple.ect_algorithm),
+            r#use: Some(tuple.flags.contains(EctVidFlags::U)),
+            multicast: Some(tuple.flags.contains(EctVidFlags::M)),
         }
     }
 }

@@ -1,0 +1,1177 @@
+{
+  "ietf-routing:routing": {
+    "control-plane-protocols": {
+      "control-plane-protocol": [
+        {
+          "type": "ietf-isis:isis",
+          "name": "test",
+          "ietf-isis:isis": {
+            "spf-control": {
+              "ietf-spf-delay": {
+                "holo-isis:level": [
+                  {
+                    "level": 2,
+                    "current-state": "quiet"
+                  }
+                ]
+              }
+            },
+            "hostnames": {
+              "hostname": [
+                {
+                  "system-id": "0000.0000.0001",
+                  "hostname": "rt1"
+                },
+                {
+                  "system-id": "0000.0000.0002",
+                  "hostname": "rt2"
+                },
+                {
+                  "system-id": "0000.0000.0003",
+                  "hostname": "rt3"
+                },
+                {
+                  "system-id": "0000.0000.0004",
+                  "hostname": "rt4"
+                }
+              ]
+            },
+            "database": {
+              "levels": [
+                {
+                  "level": 2,
+                  "lsp": [
+                    {
+                      "lsp-id": "0000.0000.0001.00-00",
+                      "attributes": {
+                        "lsp-flags": [
+                          "lsp-l2-system-flag",
+                          "lsp-l1-system-flag"
+                        ]
+                      },
+                      "ipv4-addresses": [
+                        "1.1.1.1",
+                        "10.0.1.1",
+                        "10.0.2.1"
+                      ],
+                      "ipv6-addresses": [
+                        "2001:db8:1000::1",
+                        "fc00:0:0:1::1",
+                        "fc00:0:0:2::1"
+                      ],
+                      "protocol-supported": [
+                        204,
+                        142
+                      ],
+                      "dynamic-hostname": "rt1",
+                      "extended-is-neighbor": {
+                        "neighbor": [
+                          {
+                            "neighbor-id": "0000.0000.0002.00",
+                            "instances": {
+                              "instance": [
+                                {
+                                  "id": 0,
+                                  "metric": 10
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "neighbor-id": "0000.0000.0003.00",
+                            "instances": {
+                              "instance": [
+                                {
+                                  "id": 0,
+                                  "metric": 10
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      "extended-ipv4-reachability": {
+                        "prefixes": [
+                          {
+                            "up-down": false,
+                            "ip-prefix": "1.1.1.1",
+                            "prefix-len": 32,
+                            "metric": 10,
+                            "external-prefix-flag": false,
+                            "readvertisement-flag": false,
+                            "node-flag": true
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "10.0.1.0",
+                            "prefix-len": 24,
+                            "metric": 10
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "10.0.2.0",
+                            "prefix-len": 24,
+                            "metric": 10
+                          }
+                        ]
+                      },
+                      "ipv6-reachability": {
+                        "prefixes": [
+                          {
+                            "up-down": false,
+                            "ip-prefix": "2001:db8:1000::1",
+                            "prefix-len": 128,
+                            "metric": 10,
+                            "external-prefix-flag": false,
+                            "readvertisement-flag": false,
+                            "node-flag": true
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "fc00:0:0:1::",
+                            "prefix-len": 64,
+                            "metric": 10,
+                            "external-prefix-flag": false
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "fc00:0:0:2::",
+                            "prefix-len": 64,
+                            "metric": 10,
+                            "external-prefix-flag": false
+                          }
+                        ]
+                      },
+                      "holo-isis:area-addresses": [
+                        "49.0000"
+                      ],
+                      "holo-isis:lsp-buffer-size": 1492,
+                      "holo-isis:mt-capability": [
+                        {
+                          "mt-id": 0,
+                          "overload": false,
+                          "spb-instance": {
+                            "cist-root-id": "9223653511831486465",
+                            "cist-external-root-path-cost": 0,
+                            "bridge-priority": 32769,
+                            "spsource-id-auto": false,
+                            "spsource-id": 4097,
+                            "vlan-id-tuple": [
+                              {
+                                "ect-algorithm": 8438273,
+                                "base-vid": 4000,
+                                "spvid": 0,
+                                "use": true,
+                                "multicast": true,
+                                "spvid-allocated": false
+                              },
+                              {
+                                "ect-algorithm": 8438274,
+                                "base-vid": 4001,
+                                "spvid": 0,
+                                "use": true,
+                                "multicast": true,
+                                "spvid-allocated": false
+                              }
+                            ]
+                          },
+                          "spbm-service": [
+                            {
+                              "bmac": "00:00:00:00:00:01",
+                              "base-vid": 4000,
+                              "isid": [
+                                {
+                                  "value": 100,
+                                  "transmit": true,
+                                  "receive": true
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "lsp-id": "0000.0000.0002.00-00",
+                      "attributes": {
+                        "lsp-flags": [
+                          "lsp-l2-system-flag",
+                          "lsp-l1-system-flag"
+                        ]
+                      },
+                      "ipv4-addresses": [
+                        "2.2.2.2",
+                        "10.0.1.2",
+                        "10.0.3.2"
+                      ],
+                      "ipv6-addresses": [
+                        "2001:db8:1000::2",
+                        "fc00:0:0:1::2",
+                        "fc00:0:0:3::2"
+                      ],
+                      "protocol-supported": [
+                        204,
+                        142
+                      ],
+                      "dynamic-hostname": "rt2",
+                      "extended-is-neighbor": {
+                        "neighbor": [
+                          {
+                            "neighbor-id": "0000.0000.0001.00",
+                            "instances": {
+                              "instance": [
+                                {
+                                  "id": 0,
+                                  "metric": 10
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "neighbor-id": "0000.0000.0004.00",
+                            "instances": {
+                              "instance": [
+                                {
+                                  "id": 0,
+                                  "metric": 10
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      "extended-ipv4-reachability": {
+                        "prefixes": [
+                          {
+                            "up-down": false,
+                            "ip-prefix": "2.2.2.2",
+                            "prefix-len": 32,
+                            "metric": 10,
+                            "external-prefix-flag": false,
+                            "readvertisement-flag": false,
+                            "node-flag": true
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "10.0.1.0",
+                            "prefix-len": 24,
+                            "metric": 10
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "10.0.3.0",
+                            "prefix-len": 24,
+                            "metric": 10
+                          }
+                        ]
+                      },
+                      "ipv6-reachability": {
+                        "prefixes": [
+                          {
+                            "up-down": false,
+                            "ip-prefix": "2001:db8:1000::2",
+                            "prefix-len": 128,
+                            "metric": 10,
+                            "external-prefix-flag": false,
+                            "readvertisement-flag": false,
+                            "node-flag": true
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "fc00:0:0:1::",
+                            "prefix-len": 64,
+                            "metric": 10,
+                            "external-prefix-flag": false
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "fc00:0:0:3::",
+                            "prefix-len": 64,
+                            "metric": 10,
+                            "external-prefix-flag": false
+                          }
+                        ]
+                      },
+                      "holo-isis:area-addresses": [
+                        "49.0000"
+                      ],
+                      "holo-isis:lsp-buffer-size": 1492,
+                      "holo-isis:mt-capability": [
+                        {
+                          "mt-id": 0,
+                          "overload": false,
+                          "spb-instance": {
+                            "cist-root-id": "9223934986808197122",
+                            "cist-external-root-path-cost": 0,
+                            "bridge-priority": 32770,
+                            "spsource-id-auto": false,
+                            "spsource-id": 4098,
+                            "vlan-id-tuple": [
+                              {
+                                "ect-algorithm": 8438273,
+                                "base-vid": 4000,
+                                "spvid": 0,
+                                "use": true,
+                                "multicast": true,
+                                "spvid-allocated": false
+                              },
+                              {
+                                "ect-algorithm": 8438274,
+                                "base-vid": 4001,
+                                "spvid": 0,
+                                "use": true,
+                                "multicast": true,
+                                "spvid-allocated": false
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "lsp-id": "0000.0000.0003.00-00",
+                      "attributes": {
+                        "lsp-flags": [
+                          "lsp-l2-system-flag",
+                          "lsp-l1-system-flag"
+                        ]
+                      },
+                      "ipv4-addresses": [
+                        "3.3.3.3",
+                        "10.0.2.3",
+                        "10.0.4.3"
+                      ],
+                      "ipv6-addresses": [
+                        "2001:db8:1000::3",
+                        "fc00:0:0:2::3",
+                        "fc00:0:0:4::3"
+                      ],
+                      "protocol-supported": [
+                        204,
+                        142
+                      ],
+                      "dynamic-hostname": "rt3",
+                      "extended-is-neighbor": {
+                        "neighbor": [
+                          {
+                            "neighbor-id": "0000.0000.0001.00",
+                            "instances": {
+                              "instance": [
+                                {
+                                  "id": 0,
+                                  "metric": 10
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "neighbor-id": "0000.0000.0004.00",
+                            "instances": {
+                              "instance": [
+                                {
+                                  "id": 0,
+                                  "metric": 10
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      "extended-ipv4-reachability": {
+                        "prefixes": [
+                          {
+                            "up-down": false,
+                            "ip-prefix": "3.3.3.3",
+                            "prefix-len": 32,
+                            "metric": 10,
+                            "external-prefix-flag": false,
+                            "readvertisement-flag": false,
+                            "node-flag": true
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "10.0.2.0",
+                            "prefix-len": 24,
+                            "metric": 10
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "10.0.4.0",
+                            "prefix-len": 24,
+                            "metric": 10
+                          }
+                        ]
+                      },
+                      "ipv6-reachability": {
+                        "prefixes": [
+                          {
+                            "up-down": false,
+                            "ip-prefix": "2001:db8:1000::3",
+                            "prefix-len": 128,
+                            "metric": 10,
+                            "external-prefix-flag": false,
+                            "readvertisement-flag": false,
+                            "node-flag": true
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "fc00:0:0:2::",
+                            "prefix-len": 64,
+                            "metric": 10,
+                            "external-prefix-flag": false
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "fc00:0:0:4::",
+                            "prefix-len": 64,
+                            "metric": 10,
+                            "external-prefix-flag": false
+                          }
+                        ]
+                      },
+                      "holo-isis:area-addresses": [
+                        "49.0000"
+                      ],
+                      "holo-isis:lsp-buffer-size": 1492,
+                      "holo-isis:mt-capability": [
+                        {
+                          "mt-id": 0,
+                          "overload": false,
+                          "spb-instance": {
+                            "cist-root-id": "9224216461784907779",
+                            "cist-external-root-path-cost": 0,
+                            "bridge-priority": 32771,
+                            "spsource-id-auto": false,
+                            "spsource-id": 4099,
+                            "vlan-id-tuple": [
+                              {
+                                "ect-algorithm": 8438273,
+                                "base-vid": 4000,
+                                "spvid": 0,
+                                "use": true,
+                                "multicast": true,
+                                "spvid-allocated": false
+                              },
+                              {
+                                "ect-algorithm": 8438274,
+                                "base-vid": 4001,
+                                "spvid": 0,
+                                "use": true,
+                                "multicast": true,
+                                "spvid-allocated": false
+                              }
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "lsp-id": "0000.0000.0004.00-00",
+                      "attributes": {
+                        "lsp-flags": [
+                          "lsp-l2-system-flag",
+                          "lsp-l1-system-flag"
+                        ]
+                      },
+                      "ipv4-addresses": [
+                        "4.4.4.4",
+                        "10.0.3.4",
+                        "10.0.4.4"
+                      ],
+                      "ipv6-addresses": [
+                        "2001:db8:1000::4",
+                        "fc00:0:0:3::4",
+                        "fc00:0:0:4::4"
+                      ],
+                      "protocol-supported": [
+                        204,
+                        142
+                      ],
+                      "dynamic-hostname": "rt4",
+                      "extended-is-neighbor": {
+                        "neighbor": [
+                          {
+                            "neighbor-id": "0000.0000.0002.00",
+                            "instances": {
+                              "instance": [
+                                {
+                                  "id": 0,
+                                  "metric": 10
+                                }
+                              ]
+                            }
+                          },
+                          {
+                            "neighbor-id": "0000.0000.0003.00",
+                            "instances": {
+                              "instance": [
+                                {
+                                  "id": 0,
+                                  "metric": 10
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      },
+                      "extended-ipv4-reachability": {
+                        "prefixes": [
+                          {
+                            "up-down": false,
+                            "ip-prefix": "4.4.4.4",
+                            "prefix-len": 32,
+                            "metric": 10,
+                            "external-prefix-flag": false,
+                            "readvertisement-flag": false,
+                            "node-flag": true
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "10.0.3.0",
+                            "prefix-len": 24,
+                            "metric": 10
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "10.0.4.0",
+                            "prefix-len": 24,
+                            "metric": 10
+                          }
+                        ]
+                      },
+                      "ipv6-reachability": {
+                        "prefixes": [
+                          {
+                            "up-down": false,
+                            "ip-prefix": "2001:db8:1000::4",
+                            "prefix-len": 128,
+                            "metric": 10,
+                            "external-prefix-flag": false,
+                            "readvertisement-flag": false,
+                            "node-flag": true
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "fc00:0:0:3::",
+                            "prefix-len": 64,
+                            "metric": 10,
+                            "external-prefix-flag": false
+                          },
+                          {
+                            "up-down": false,
+                            "ip-prefix": "fc00:0:0:4::",
+                            "prefix-len": 64,
+                            "metric": 10,
+                            "external-prefix-flag": false
+                          }
+                        ]
+                      },
+                      "holo-isis:area-addresses": [
+                        "49.0000"
+                      ],
+                      "holo-isis:lsp-buffer-size": 1492,
+                      "holo-isis:mt-capability": [
+                        {
+                          "mt-id": 0,
+                          "overload": false,
+                          "spb-instance": {
+                            "cist-root-id": "9224497936761618436",
+                            "cist-external-root-path-cost": 0,
+                            "bridge-priority": 32772,
+                            "spsource-id-auto": false,
+                            "spsource-id": 4100,
+                            "vlan-id-tuple": [
+                              {
+                                "ect-algorithm": 8438273,
+                                "base-vid": 4000,
+                                "spvid": 0,
+                                "use": true,
+                                "multicast": true,
+                                "spvid-allocated": false
+                              },
+                              {
+                                "ect-algorithm": 8438274,
+                                "base-vid": 4001,
+                                "spvid": 0,
+                                "use": true,
+                                "multicast": true,
+                                "spvid-allocated": false
+                              }
+                            ]
+                          },
+                          "spbm-service": [
+                            {
+                              "bmac": "00:00:00:00:00:04",
+                              "base-vid": 4000,
+                              "isid": [
+                                {
+                                  "value": 100,
+                                  "transmit": true,
+                                  "receive": true
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ],
+                  "holo-isis:lsp-count": 4
+                }
+              ]
+            },
+            "local-rib": {
+              "route": [
+                {
+                  "prefix": "1.1.1.1/32",
+                  "next-hops": {
+                    "next-hop": [
+                      {
+                        "next-hop": "10.0.2.1",
+                        "outgoing-interface": "eth-rt1"
+                      }
+                    ]
+                  },
+                  "metric": 20,
+                  "level": 2
+                },
+                {
+                  "prefix": "2.2.2.2/32",
+                  "next-hops": {
+                    "next-hop": [
+                      {
+                        "next-hop": "10.0.2.1",
+                        "outgoing-interface": "eth-rt1"
+                      },
+                      {
+                        "next-hop": "10.0.4.4",
+                        "outgoing-interface": "eth-rt4"
+                      }
+                    ]
+                  },
+                  "metric": 30,
+                  "level": 2
+                },
+                {
+                  "prefix": "3.3.3.3/32",
+                  "metric": 10,
+                  "level": 2
+                },
+                {
+                  "prefix": "4.4.4.4/32",
+                  "next-hops": {
+                    "next-hop": [
+                      {
+                        "next-hop": "10.0.4.4",
+                        "outgoing-interface": "eth-rt4"
+                      }
+                    ]
+                  },
+                  "metric": 20,
+                  "level": 2
+                },
+                {
+                  "prefix": "10.0.1.0/24",
+                  "next-hops": {
+                    "next-hop": [
+                      {
+                        "next-hop": "10.0.2.1",
+                        "outgoing-interface": "eth-rt1"
+                      }
+                    ]
+                  },
+                  "metric": 20,
+                  "level": 2
+                },
+                {
+                  "prefix": "10.0.2.0/24",
+                  "metric": 10,
+                  "level": 2
+                },
+                {
+                  "prefix": "10.0.3.0/24",
+                  "next-hops": {
+                    "next-hop": [
+                      {
+                        "next-hop": "10.0.4.4",
+                        "outgoing-interface": "eth-rt4"
+                      }
+                    ]
+                  },
+                  "metric": 20,
+                  "level": 2
+                },
+                {
+                  "prefix": "10.0.4.0/24",
+                  "metric": 10,
+                  "level": 2
+                },
+                {
+                  "prefix": "2001:db8:1000::1/128",
+                  "next-hops": {
+                    "next-hop": [
+                      {
+                        "next-hop": "fe80::5847:a4ff:feb7:fbe4",
+                        "outgoing-interface": "eth-rt1"
+                      }
+                    ]
+                  },
+                  "metric": 20,
+                  "level": 2
+                },
+                {
+                  "prefix": "2001:db8:1000::2/128",
+                  "next-hops": {
+                    "next-hop": [
+                      {
+                        "next-hop": "fe80::5847:a4ff:feb7:fbe4",
+                        "outgoing-interface": "eth-rt1"
+                      },
+                      {
+                        "next-hop": "fe80::d06a:a3ff:fee8:d0b9",
+                        "outgoing-interface": "eth-rt4"
+                      }
+                    ]
+                  },
+                  "metric": 30,
+                  "level": 2
+                },
+                {
+                  "prefix": "2001:db8:1000::3/128",
+                  "metric": 10,
+                  "level": 2
+                },
+                {
+                  "prefix": "2001:db8:1000::4/128",
+                  "next-hops": {
+                    "next-hop": [
+                      {
+                        "next-hop": "fe80::d06a:a3ff:fee8:d0b9",
+                        "outgoing-interface": "eth-rt4"
+                      }
+                    ]
+                  },
+                  "metric": 20,
+                  "level": 2
+                },
+                {
+                  "prefix": "fc00:0:0:1::/64",
+                  "next-hops": {
+                    "next-hop": [
+                      {
+                        "next-hop": "fe80::5847:a4ff:feb7:fbe4",
+                        "outgoing-interface": "eth-rt1"
+                      }
+                    ]
+                  },
+                  "metric": 20,
+                  "level": 2
+                },
+                {
+                  "prefix": "fc00:0:0:2::/64",
+                  "metric": 10,
+                  "level": 2
+                },
+                {
+                  "prefix": "fc00:0:0:3::/64",
+                  "next-hops": {
+                    "next-hop": [
+                      {
+                        "next-hop": "fe80::d06a:a3ff:fee8:d0b9",
+                        "outgoing-interface": "eth-rt4"
+                      }
+                    ]
+                  },
+                  "metric": 20,
+                  "level": 2
+                },
+                {
+                  "prefix": "fc00:0:0:4::/64",
+                  "metric": 10,
+                  "level": 2
+                }
+              ]
+            },
+            "interfaces": {
+              "interface": [
+                {
+                  "name": "eth-rt1",
+                  "adjacencies": {
+                    "adjacency": [
+                      {
+                        "neighbor-sys-type": "level-2",
+                        "neighbor-sysid": "0000.0000.0001",
+                        "usage": "level-2",
+                        "state": "up",
+                        "holo-isis:area-addresses": [
+                          "49.0000"
+                        ],
+                        "holo-isis:ipv4-addresses": [
+                          "10.0.2.1"
+                        ],
+                        "holo-isis:ipv6-addresses": [
+                          "fe80::5847:a4ff:feb7:fbe4"
+                        ],
+                        "holo-isis:protocol-supported": [
+                          204,
+                          142,
+                          193
+                        ],
+                        "holo-isis:spb": {
+                          "capable": true,
+                          "bidirectional": true,
+                          "agreement": "no-digest",
+                          "ect-vid": [
+                            {
+                              "base-vid": 4000,
+                              "ect-algorithm": 8438273,
+                              "use": true,
+                              "multicast": true
+                            },
+                            {
+                              "base-vid": 4001,
+                              "ect-algorithm": 8438274,
+                              "use": true,
+                              "multicast": true
+                            }
+                          ]
+                        },
+                        "holo-isis:topologies": [
+                          0
+                        ]
+                      }
+                    ]
+                  },
+                  "holo-isis:state": "up"
+                },
+                {
+                  "name": "eth-rt4",
+                  "adjacencies": {
+                    "adjacency": [
+                      {
+                        "neighbor-sys-type": "level-2",
+                        "neighbor-sysid": "0000.0000.0004",
+                        "usage": "level-2",
+                        "state": "up",
+                        "holo-isis:area-addresses": [
+                          "49.0000"
+                        ],
+                        "holo-isis:ipv4-addresses": [
+                          "10.0.4.4"
+                        ],
+                        "holo-isis:ipv6-addresses": [
+                          "fe80::d06a:a3ff:fee8:d0b9"
+                        ],
+                        "holo-isis:protocol-supported": [
+                          204,
+                          142,
+                          193
+                        ],
+                        "holo-isis:spb": {
+                          "capable": true,
+                          "bidirectional": true,
+                          "agreement": "no-digest",
+                          "ect-vid": [
+                            {
+                              "base-vid": 4000,
+                              "ect-algorithm": 8438273,
+                              "use": true,
+                              "multicast": true
+                            },
+                            {
+                              "base-vid": 4001,
+                              "ect-algorithm": 8438274,
+                              "use": true,
+                              "multicast": true
+                            }
+                          ]
+                        },
+                        "holo-isis:topologies": [
+                          0
+                        ]
+                      }
+                    ]
+                  },
+                  "holo-isis:state": "up"
+                },
+                {
+                  "name": "lo",
+                  "holo-isis:state": "up"
+                }
+              ]
+            },
+            "holo-isis:spb": {
+              "computed": {
+                "trees": 6,
+                "trees-skipped": 0,
+                "generation": "2",
+                "digest": "be:15:45:54:d4:b3:fe:6a:ec:64:f1:ea:ca:78:a3:79:af:d6:7f:29:ed:d4:e9:34:fb:c5:dd:da:38:95:42:36",
+                "agreement-number": 3,
+                "agreed": false,
+                "trees-withheld": 4,
+                "tree": [
+                  {
+                    "base-vid": 4000,
+                    "root": "0000.0000.0001",
+                    "algorithm": 8438273,
+                    "node": [
+                      {
+                        "system-id": "0000.0000.0001",
+                        "cost": 0,
+                        "hops": 0,
+                        "path-id": ""
+                      },
+                      {
+                        "system-id": "0000.0000.0002",
+                        "cost": 10,
+                        "hops": 1,
+                        "parent": "0000.0000.0001",
+                        "first-hop": "0000.0000.0002",
+                        "path-id": ""
+                      },
+                      {
+                        "system-id": "0000.0000.0003",
+                        "cost": 10,
+                        "hops": 1,
+                        "parent": "0000.0000.0001",
+                        "first-hop": "0000.0000.0003",
+                        "path-id": ""
+                      },
+                      {
+                        "system-id": "0000.0000.0004",
+                        "cost": 20,
+                        "hops": 2,
+                        "parent": "0000.0000.0002",
+                        "first-hop": "0000.0000.0002",
+                        "path-id": "8002000000000002"
+                      }
+                    ]
+                  },
+                  {
+                    "base-vid": 4000,
+                    "root": "0000.0000.0003",
+                    "algorithm": 8438273,
+                    "node": [
+                      {
+                        "system-id": "0000.0000.0001",
+                        "cost": 10,
+                        "hops": 1,
+                        "parent": "0000.0000.0003",
+                        "first-hop": "0000.0000.0001",
+                        "path-id": ""
+                      },
+                      {
+                        "system-id": "0000.0000.0002",
+                        "cost": 20,
+                        "hops": 2,
+                        "parent": "0000.0000.0001",
+                        "first-hop": "0000.0000.0001",
+                        "path-id": "8001000000000001"
+                      },
+                      {
+                        "system-id": "0000.0000.0003",
+                        "cost": 0,
+                        "hops": 0,
+                        "path-id": ""
+                      },
+                      {
+                        "system-id": "0000.0000.0004",
+                        "cost": 10,
+                        "hops": 1,
+                        "parent": "0000.0000.0003",
+                        "first-hop": "0000.0000.0004",
+                        "path-id": ""
+                      }
+                    ]
+                  },
+                  {
+                    "base-vid": 4000,
+                    "root": "0000.0000.0004",
+                    "algorithm": 8438273,
+                    "node": [
+                      {
+                        "system-id": "0000.0000.0001",
+                        "cost": 20,
+                        "hops": 2,
+                        "parent": "0000.0000.0002",
+                        "first-hop": "0000.0000.0002",
+                        "path-id": "8002000000000002"
+                      },
+                      {
+                        "system-id": "0000.0000.0002",
+                        "cost": 10,
+                        "hops": 1,
+                        "parent": "0000.0000.0004",
+                        "first-hop": "0000.0000.0002",
+                        "path-id": ""
+                      },
+                      {
+                        "system-id": "0000.0000.0003",
+                        "cost": 10,
+                        "hops": 1,
+                        "parent": "0000.0000.0004",
+                        "first-hop": "0000.0000.0003",
+                        "path-id": ""
+                      },
+                      {
+                        "system-id": "0000.0000.0004",
+                        "cost": 0,
+                        "hops": 0,
+                        "path-id": ""
+                      }
+                    ]
+                  },
+                  {
+                    "base-vid": 4001,
+                    "root": "0000.0000.0001",
+                    "algorithm": 8438274,
+                    "node": [
+                      {
+                        "system-id": "0000.0000.0001",
+                        "cost": 0,
+                        "hops": 0,
+                        "path-id": ""
+                      },
+                      {
+                        "system-id": "0000.0000.0002",
+                        "cost": 10,
+                        "hops": 1,
+                        "parent": "0000.0000.0001",
+                        "first-hop": "0000.0000.0002",
+                        "path-id": ""
+                      },
+                      {
+                        "system-id": "0000.0000.0003",
+                        "cost": 10,
+                        "hops": 1,
+                        "parent": "0000.0000.0001",
+                        "first-hop": "0000.0000.0003",
+                        "path-id": ""
+                      },
+                      {
+                        "system-id": "0000.0000.0004",
+                        "cost": 20,
+                        "hops": 2,
+                        "parent": "0000.0000.0003",
+                        "first-hop": "0000.0000.0003",
+                        "path-id": "7ffcfffffffffffc"
+                      }
+                    ]
+                  },
+                  {
+                    "base-vid": 4001,
+                    "root": "0000.0000.0003",
+                    "algorithm": 8438274,
+                    "node": [
+                      {
+                        "system-id": "0000.0000.0001",
+                        "cost": 10,
+                        "hops": 1,
+                        "parent": "0000.0000.0003",
+                        "first-hop": "0000.0000.0001",
+                        "path-id": ""
+                      },
+                      {
+                        "system-id": "0000.0000.0002",
+                        "cost": 20,
+                        "hops": 2,
+                        "parent": "0000.0000.0004",
+                        "first-hop": "0000.0000.0004",
+                        "path-id": "7ffbfffffffffffb"
+                      },
+                      {
+                        "system-id": "0000.0000.0003",
+                        "cost": 0,
+                        "hops": 0,
+                        "path-id": ""
+                      },
+                      {
+                        "system-id": "0000.0000.0004",
+                        "cost": 10,
+                        "hops": 1,
+                        "parent": "0000.0000.0003",
+                        "first-hop": "0000.0000.0004",
+                        "path-id": ""
+                      }
+                    ]
+                  },
+                  {
+                    "base-vid": 4001,
+                    "root": "0000.0000.0004",
+                    "algorithm": 8438274,
+                    "node": [
+                      {
+                        "system-id": "0000.0000.0001",
+                        "cost": 20,
+                        "hops": 2,
+                        "parent": "0000.0000.0003",
+                        "first-hop": "0000.0000.0003",
+                        "path-id": "7ffcfffffffffffc"
+                      },
+                      {
+                        "system-id": "0000.0000.0002",
+                        "cost": 10,
+                        "hops": 1,
+                        "parent": "0000.0000.0004",
+                        "first-hop": "0000.0000.0002",
+                        "path-id": ""
+                      },
+                      {
+                        "system-id": "0000.0000.0003",
+                        "cost": 10,
+                        "hops": 1,
+                        "parent": "0000.0000.0004",
+                        "first-hop": "0000.0000.0003",
+                        "path-id": ""
+                      },
+                      {
+                        "system-id": "0000.0000.0004",
+                        "cost": 0,
+                        "hops": 0,
+                        "path-id": ""
+                      }
+                    ]
+                  }
+                ],
+                "unicast": [
+                  {
+                    "base-vid": 4000,
+                    "bmac": "00:00:00:00:00:01",
+                    "owner": "0000.0000.0001",
+                    "nexthop": "0000.0000.0001",
+                    "cost": 10
+                  },
+                  {
+                    "base-vid": 4000,
+                    "bmac": "00:00:00:00:00:04",
+                    "owner": "0000.0000.0004",
+                    "nexthop": "0000.0000.0004",
+                    "cost": 10
+                  }
+                ],
+                "service": [
+                  {
+                    "i-sid": 100,
+                    "base-vid": 4000,
+                    "transmit": false,
+                    "receive": false,
+                    "member": [
+                      {
+                        "system-id": "0000.0000.0001",
+                        "bmac": "00:00:00:00:00:01"
+                      },
+                      {
+                        "system-id": "0000.0000.0004",
+                        "bmac": "00:00:00:00:00:04"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

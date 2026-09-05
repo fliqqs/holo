@@ -1,0 +1,29 @@
+            +---------+
+            |   RT1   |  BEB, I-SID 100
+            | 1.1.1.1 |  B-MAC 00:00:00:00:00:01
+            +---------+
+          eth-rt2|  |eth-rt3
+                 |  |
+     10.0.1.0/24 |  | 10.0.2.0/24
+       +---------+  +---------+
+       |                      |
+       |eth-rt1               |eth-rt1
+  +---------+            +---------+
+  |   RT2   |            |   RT3   |  BCB (transit only)
+  | 2.2.2.2 |            | 3.3.3.3 |
+  +---------+            +---------+
+       |eth-rt4               |eth-rt4
+       |                      |
+     10.0.3.0/24  10.0.4.0/24 |
+       +---------+  +---------+
+                 |  |
+          eth-rt2|  |eth-rt3
+            +---------+
+            |   RT4   |  BEB, I-SID 100
+            | 4.4.4.4 |  B-MAC 00:00:00:00:00:04
+            +---------+
+
+ All links are point-to-point with an SPB link metric of 10, so RT1->RT4 is
+ cost 20 by either path.
+
+ B-VID 4000 uses ECT algorithm 1, B-VID 4001 uses algorithm 2.

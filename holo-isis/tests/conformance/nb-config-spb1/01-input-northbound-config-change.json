@@ -1,0 +1,105 @@
+{
+  "ietf-routing:routing": {
+    "@": {
+      "yang:operation": "none"
+    },
+    "control-plane-protocols": {
+      "control-plane-protocol": [
+        {
+          "type": "ietf-isis:isis",
+          "name": "test",
+          "ietf-isis:isis": {
+            "holo-isis:spb": {
+              "enable": true,
+              "@enable": {
+                "yang:operation": "replace",
+                "yang:orig-default": true,
+                "yang:orig-value": "false"
+              },
+              "bridge-priority": 4096,
+              "@bridge-priority": {
+                "yang:operation": "replace",
+                "yang:orig-default": true,
+                "yang:orig-value": "32768"
+              },
+              "spsource-id": {
+                "auto": false,
+                "@auto": {
+                  "yang:operation": "replace",
+                  "yang:orig-default": true,
+                  "yang:orig-value": "true"
+                },
+                "value": 74565,
+                "@value": {
+                  "yang:operation": "create"
+                }
+              },
+              "tree": [
+                {
+                  "@": {
+                    "yang:operation": "create"
+                  },
+                  "base-vid": 4000,
+                  "algorithm": 1,
+                  "multicast": true
+                }
+              ],
+              "service": [
+                {
+                  "@": {
+                    "yang:operation": "create"
+                  },
+                  "bmac": "aa:bb:cc:dd:ee:01",
+                  "base-vid": 4000,
+                  "isid": [
+                    {
+                      "@": {
+                        "yang:operation": "create"
+                      },
+                      "value": 100
+                    }
+                  ]
+                }
+              ]
+            },
+            "interfaces": {
+              "@": {
+                "yang:operation": "none"
+              },
+              "interface": [
+                {
+                  "@": {
+                    "yang:operation": "none"
+                  },
+                  "name": "eth-rt2",
+                  "holo-isis:spb": {
+                    "enable": true,
+                    "@enable": {
+                      "yang:operation": "replace",
+                      "yang:orig-default": true,
+                      "yang:orig-value": "false"
+                    },
+                    "link-metric": 20,
+                    "@link-metric": {
+                      "yang:operation": "replace",
+                      "yang:orig-default": true,
+                      "yang:orig-value": "10"
+                    },
+                    "port-identifier": [
+                      1
+                    ],
+                    "@port-identifier": [
+                      {
+                        "yang:operation": "create"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

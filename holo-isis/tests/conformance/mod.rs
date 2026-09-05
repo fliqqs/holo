@@ -989,6 +989,20 @@ async fn nb_config_preference1() {
 }
 
 // Input:
+//  * Northbound: enable SPB and configure one SPBM service (B-MAC
+//    aa:bb:cc:dd:ee:01, Base VID 4000) advertising I-SID 100
+// Output:
+//  * Protocol: send an updated local LSP to the 0000.0000.0002 adjacency
+//  * Northbound:
+//    - add the MT-Capability TLV carrying the SPBM-SI sub-TLV to the local LSP
+//    - add the local LSP to the SRM list of the 0000.0000.0002 adjacency
+//    - send an "lsp-generation" YANG notification
+#[tokio::test]
+async fn nb_config_spb1() {
+    run_test::<Instance>("nb-config-spb1", "topo1-1", "rt1").await;
+}
+
+// Input:
 //  * Northbound: change the SPF maximum-paths from 16 to 1
 // Output:
 //  * Northbound: update all routes in the local RIB to use a single nexthop

@@ -1,0 +1,15 @@
+{"RouterIdSub":{}}
+{"HostnameSub":{}}
+{"InterfaceSub":{"ifname":"eth-rt1","af":null}}
+{"InterfaceSub":{"ifname":"eth-rt4","af":null}}
+{"InterfaceSub":{"ifname":"lo","af":null}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"1.1.1.1/32","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":2,"addr":"10.0.1.1","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"3.3.3.3/32","distance":115,"metric":30,"tag":null,"nexthops":[{"Address":{"ifindex":2,"addr":"10.0.1.1","labels":[]}},{"Address":{"ifindex":3,"addr":"10.0.3.4","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"4.4.4.4/32","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":3,"addr":"10.0.3.4","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"10.0.2.0/24","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":2,"addr":"10.0.1.1","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"10.0.4.0/24","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":3,"addr":"10.0.3.4","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"2001:db8:1000::1/128","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":2,"addr":"fe80::587c:a6ff:fe9e:aa5e","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"2001:db8:1000::3/128","distance":115,"metric":30,"tag":null,"nexthops":[{"Address":{"ifindex":3,"addr":"fe80::61:3fff:fe8c:9b2e","labels":[]}},{"Address":{"ifindex":2,"addr":"fe80::587c:a6ff:fe9e:aa5e","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"2001:db8:1000::4/128","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":3,"addr":"fe80::61:3fff:fe8c:9b2e","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"fc00:0:0:2::/64","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":2,"addr":"fe80::587c:a6ff:fe9e:aa5e","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"fc00:0:0:4::/64","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":3,"addr":"fe80::61:3fff:fe8c:9b2e","labels":[]}}]}}

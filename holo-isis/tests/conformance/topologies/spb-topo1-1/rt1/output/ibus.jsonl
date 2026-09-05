@@ -1,0 +1,15 @@
+{"RouterIdSub":{}}
+{"HostnameSub":{}}
+{"InterfaceSub":{"ifname":"eth-rt2","af":null}}
+{"InterfaceSub":{"ifname":"eth-rt3","af":null}}
+{"InterfaceSub":{"ifname":"lo","af":null}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"2.2.2.2/32","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":2,"addr":"10.0.1.2","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"3.3.3.3/32","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":3,"addr":"10.0.2.3","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"4.4.4.4/32","distance":115,"metric":30,"tag":null,"nexthops":[{"Address":{"ifindex":2,"addr":"10.0.1.2","labels":[]}},{"Address":{"ifindex":3,"addr":"10.0.2.3","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"10.0.3.0/24","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":2,"addr":"10.0.1.2","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"10.0.4.0/24","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":3,"addr":"10.0.2.3","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"2001:db8:1000::2/128","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":2,"addr":"fe80::442f:59ff:fe97:4178","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"2001:db8:1000::3/128","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":3,"addr":"fe80::64b4:a1ff:fea9:6da4","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"2001:db8:1000::4/128","distance":115,"metric":30,"tag":null,"nexthops":[{"Address":{"ifindex":2,"addr":"fe80::442f:59ff:fe97:4178","labels":[]}},{"Address":{"ifindex":3,"addr":"fe80::64b4:a1ff:fea9:6da4","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"fc00:0:0:3::/64","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":2,"addr":"fe80::442f:59ff:fe97:4178","labels":[]}}]}}
+{"RouteIpAdd":{"protocol":"isis","prefix":"fc00:0:0:4::/64","distance":115,"metric":20,"tag":null,"nexthops":[{"Address":{"ifindex":3,"addr":"fe80::64b4:a1ff:fea9:6da4","labels":[]}}]}}

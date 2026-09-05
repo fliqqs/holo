@@ -1,0 +1,29 @@
+[package]
+name = "holo-spb"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+bitflags.workspace = true
+hyper-util = "0.1"
+prost.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tonic.workspace = true
+tonic-prost.workspace = true
+tower = { version = "0.5", features = ["util"] }
+derive-new.workspace = true
+hmac.workspace = true
+serde.workspace = true
+sha2.workspace = true
+tracing.workspace = true
+
+holo-utils = { path = "../holo-utils" }
+
+[build-dependencies]
+tonic-prost-build.workspace = true
+
+[lints]
+workspace = true

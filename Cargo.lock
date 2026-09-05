@@ -1242,6 +1242,7 @@ dependencies = [
  "holo-isis",
  "holo-northbound",
  "holo-protocol",
+ "holo-spb",
  "holo-utils",
  "holo-yang",
  "ipnetwork",
@@ -1491,6 +1492,27 @@ dependencies = [
  "tokio",
  "tracing",
  "yang5",
+]
+
+[[package]]
+name = "holo-spb"
+version = "0.9.0"
+dependencies = [
+ "bitflags 2.13.0",
+ "derive-new",
+ "hmac",
+ "holo-utils",
+ "hyper-util",
+ "prost",
+ "serde",
+ "sha2",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tower",
+ "tracing",
 ]
 
 [[package]]

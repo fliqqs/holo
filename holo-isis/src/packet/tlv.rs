@@ -29,8 +29,8 @@ use tracing::debug_span;
 
 use crate::packet::error::{TlvDecodeError, TlvDecodeResult};
 use crate::packet::iana::{
-    AuthenticationType, MtCapStlvType, NeighborStlvType, Nlpid, PrefixStlvType,
-    RouterCapStlvType, TlvType,
+    AuthenticationType, MtCapStlvType, MtPortCapStlvType, NeighborStlvType,
+    Nlpid, PrefixStlvType, RouterCapStlvType, TlvType,
 };
 #[cfg(feature = "testing")]
 use crate::packet::pdu::serde_lsp_rem_lifetime_filter;
@@ -43,7 +43,10 @@ use crate::packet::subtlvs::prefix::{
     BierInfoStlv, Ipv4SourceRidStlv, Ipv6SourceRidStlv, PrefixAttrFlags,
     PrefixAttrFlagsStlv, PrefixSidStlv,
 };
-use crate::packet::subtlvs::spb::SpbmSiStlv;
+use crate::packet::subtlvs::spb::{
+    SpbBVidStlv, SpbDigestStlv, SpbInstStlv, SpbMcidStlv, SpbMetricStlv,
+    SpbmSiStlv,
+};
 use crate::packet::{AreaAddr, LanId, LspId, SystemId, subtlvs};
 
 // TLV header size.
@@ -311,6 +314,8 @@ pub struct IsReachStlvs {
     pub asla: Vec<subtlvs::neighbor::AslaStlv>,
     pub adj_sids: Vec<subtlvs::neighbor::AdjSidStlv>,
     pub link_msd: Option<MsdStlv>,
+    /// SPB-Metric Sub-TLV (Type 29); at most one per adjacency.
+    pub spb_metric: Option<SpbMetricStlv>,
     pub unknown: Vec<UnknownTlv>,
 }
 
@@ -452,6 +457,38 @@ pub struct RouterCapStlvs {
     pub unknown: Vec<UnknownTlv>,
 }
 
+/// MT-Port-Capability TLV (Type 143) for per-port Multi-Topology
+/// capabilities.
+///
+/// Defined in RFC 6165 and carried in IIH PDUs. SPB uses it to convey the
+/// SPB-MCID, SPB-Digest and SPB-B-VID Sub-TLVs, always with an MT ID of 0.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Deserialize, Serialize)]
+pub struct MtPortCapTlv {
+    /// Multi-Topology ID (12 bits).
+    pub mt_id: u16,
+    /// Sub-TLVs carried within this TLV.
+    pub sub_tlvs: MtPortCapStlvs,
+}
+
+/// Sub-TLVs for the MT-Port-Capability TLV.
+#[derive(Clone, Debug, Default, PartialEq)]
+#[serde_with::apply(
+    Option => #[serde(default, skip_serializing_if = "Option::is_none")],
+    Vec => #[serde(default, skip_serializing_if = "Vec::is_empty")],
+)]
+#[derive(Deserialize, Serialize)]
+pub struct MtPortCapStlvs {
+    /// SPB-MCID Sub-TLV (Type 4); exactly one per TLV.
+    pub spb_mcid: Option<SpbMcidStlv>,
+    /// SPB-Digest Sub-TLVs (Type 5); zero or more.
+    pub spb_digest: Vec<SpbDigestStlv>,
+    /// SPB-B-VID Sub-TLV (Type 6); exactly one per TLV.
+    pub spb_b_vid: Option<SpbBVidStlv>,
+    /// Unknown Sub-TLVs.
+    pub unknown: Vec<UnknownTlv>,
+}
+
 /// MT-Capability TLV (Type 144) for Multi-Topology capabilities.
 ///
 /// This TLV carries SPB-related Sub-TLVs as defined in RFC 6329.
@@ -469,10 +506,13 @@ pub struct MtCapabilityTlv {
 /// Sub-TLVs for MT-Capability TLV.
 #[derive(Clone, Debug, Default, PartialEq)]
 #[serde_with::apply(
+    Option => #[serde(default, skip_serializing_if = "Option::is_none")],
     Vec => #[serde(default, skip_serializing_if = "Vec::is_empty")],
 )]
 #[derive(Deserialize, Serialize)]
 pub struct MtCapStlvs {
+    /// SPB-Inst Sub-TLV (Type 1) - exactly one per SPB instance.
+    pub spb_inst: Option<SpbInstStlv>,
     /// SPBM-SI Sub-TLVs (Type 3) - may have multiple instances.
     pub spbm_si: Vec<SpbmSiStlv>,
     /// Unknown Sub-TLVs.
@@ -1490,6 +1530,17 @@ impl IsReachTlv {
                             Err(error) => error.log(),
                         }
                     }
+                    Some(NeighborStlvType::SpbMetric) => {
+                        // At most one SPB-Metric per adjacency; ignore any
+                        // duplicate rather than overwriting.
+                        if sub_tlvs.spb_metric.is_some() {
+                            continue;
+                        }
+                        match SpbMetricStlv::decode(stlv_len, &mut buf_stlv) {
+                            Ok(stlv) => sub_tlvs.spb_metric = Some(stlv),
+                            Err(error) => error.log(),
+                        }
+                    }
                     Some(NeighborStlvType::AdjacencySid) => {
                         match AdjSidStlv::decode(stlv_len, false, &mut buf_stlv)
                         {
@@ -1619,6 +1670,9 @@ impl IsReachTlv {
             if let Some(stlv) = &entry.sub_tlvs.link_msd {
                 stlv.encode(NeighborStlvType::LinkMsd as u8, buf);
             }
+            if let Some(stlv) = &entry.sub_tlvs.spb_metric {
+                stlv.encode(buf);
+            }
             for stlv in &entry.sub_tlvs.asla {
                 stlv.encode(buf);
             }
@@ -1636,8 +1690,19 @@ impl EntryBasedTlv for IsReachTlv {
         self.list.iter()
     }
 
-    fn entry_len(_entry: &IsReach) -> usize {
+    fn entry_len(entry: &IsReach) -> usize {
+        // NOTE: the remaining IS-reach Sub-TLVs (Adj-SID, ASLA, MSD, TE
+        // attributes) are not accounted for here, so the computed length can
+        // under-count and LSP fragmentation can overflow the LSP MTU. That
+        // predates SPB and fixing it requires a `len()` on each of those
+        // types; the SPB-Metric Sub-TLV is accounted for so that enabling SPB
+        // does not make the gap worse.
         Self::ENTRY_MIN_SIZE
+            + entry
+                .sub_tlvs
+                .spb_metric
+                .as_ref()
+                .map_or(0, |stlv| stlv.len())
     }
 }
 
@@ -2723,6 +2788,113 @@ impl Tlv for RouterCapTlv {
 
 // ===== impl MtCapabilityTlv =====
 
+impl MtPortCapTlv {
+    /// Minimum size: Reserved/MT-ID (2 bytes).
+    const MIN_SIZE: usize = 2;
+
+    pub(crate) fn decode(
+        tlv_len: u8,
+        buf: &mut Bytes,
+    ) -> TlvDecodeResult<Self> {
+        if (tlv_len as usize) < Self::MIN_SIZE {
+            return Err(TlvDecodeError::InvalidLength(tlv_len));
+        }
+
+        // Reserved (4 bits) + MT-ID (12 bits).
+        let mt_id = buf.try_get_u16()? & 0x0fff;
+
+        let mut sub_tlvs = MtPortCapStlvs::default();
+        while buf.remaining() >= TLV_HDR_SIZE {
+            let stlv_type = buf.try_get_u8()?;
+            let stlv_etype = MtPortCapStlvType::from_u8(stlv_type);
+
+            let stlv_len = buf.try_get_u8()?;
+            if stlv_len as usize > buf.remaining() {
+                return Err(TlvDecodeError::InvalidLength(stlv_len));
+            }
+
+            let span =
+                debug_span!("sub-TLV", r#type = stlv_type, length = stlv_len);
+            let _span_guard = span.enter();
+            let mut buf_stlv = buf.try_copy_to_bytes(stlv_len as usize)?;
+            match stlv_etype {
+                Some(MtPortCapStlvType::SpbMcid) => {
+                    // Exactly one MCID is expected; ignore a duplicate
+                    // rather than overwriting.
+                    if sub_tlvs.spb_mcid.is_some() {
+                        continue;
+                    }
+                    match SpbMcidStlv::decode(stlv_len, &mut buf_stlv) {
+                        Ok(stlv) => sub_tlvs.spb_mcid = Some(stlv),
+                        Err(error) => error.log(),
+                    }
+                }
+                Some(MtPortCapStlvType::SpbDigest) => {
+                    match SpbDigestStlv::decode(stlv_len, &mut buf_stlv) {
+                        Ok(stlv) => sub_tlvs.spb_digest.push(stlv),
+                        Err(error) => error.log(),
+                    }
+                }
+                Some(MtPortCapStlvType::SpbBVid) => {
+                    // Exactly one SPB-B-VID is expected per TLV; ignore a
+                    // duplicate rather than overwriting.
+                    if sub_tlvs.spb_b_vid.is_some() {
+                        continue;
+                    }
+                    match SpbBVidStlv::decode(stlv_len, &mut buf_stlv) {
+                        Ok(stlv) => sub_tlvs.spb_b_vid = Some(stlv),
+                        Err(error) => error.log(),
+                    }
+                }
+                _ => {
+                    sub_tlvs
+                        .unknown
+                        .push(UnknownTlv::new(stlv_type, stlv_len, buf_stlv));
+                }
+            }
+        }
+
+        Ok(MtPortCapTlv { mt_id, sub_tlvs })
+    }
+
+    pub(crate) fn encode(&self, buf: &mut BytesMut) {
+        let start_pos = tlv_encode_start(buf, TlvType::MtPortCap);
+
+        buf.put_u16(self.mt_id & 0x0fff);
+
+        // Emitted in Sub-TLV type order.
+        if let Some(stlv) = &self.sub_tlvs.spb_mcid {
+            stlv.encode(buf);
+        }
+        for stlv in &self.sub_tlvs.spb_digest {
+            stlv.encode(buf);
+        }
+        if let Some(stlv) = &self.sub_tlvs.spb_b_vid {
+            stlv.encode(buf);
+        }
+
+        tlv_encode_end(buf, start_pos);
+    }
+}
+
+impl Tlv for MtPortCapTlv {
+    fn len(&self) -> usize {
+        let mut len = TLV_HDR_SIZE + Self::MIN_SIZE;
+
+        if let Some(stlv) = &self.sub_tlvs.spb_mcid {
+            len += stlv.len();
+        }
+        for stlv in &self.sub_tlvs.spb_digest {
+            len += stlv.len();
+        }
+        if let Some(stlv) = &self.sub_tlvs.spb_b_vid {
+            len += stlv.len();
+        }
+
+        len
+    }
+}
+
 impl MtCapabilityTlv {
     /// Minimum size: O/MT-ID (2 bytes).
     const MIN_SIZE: usize = 2;
@@ -2767,10 +2939,15 @@ impl MtCapabilityTlv {
                     }
                 }
                 Some(MtCapStlvType::SpbInstance) => {
-                    // TODO: Implement SPB-Inst Sub-TLV decoding.
-                    sub_tlvs
-                        .unknown
-                        .push(UnknownTlv::new(stlv_type, stlv_len, buf_stlv));
+                    // Exactly one SPB-Inst is expected per SPB instance;
+                    // ignore any duplicate rather than overwriting.
+                    if sub_tlvs.spb_inst.is_some() {
+                        continue;
+                    }
+                    match SpbInstStlv::decode(stlv_len, &mut buf_stlv) {
+                        Ok(stlv) => sub_tlvs.spb_inst = Some(stlv),
+                        Err(error) => error.log(),
+                    }
                 }
                 _ => {
                     // Save unknown Sub-TLV.
@@ -2799,6 +2976,9 @@ impl MtCapabilityTlv {
         buf.put_u16(mt_id_raw);
 
         // Encode Sub-TLVs.
+        if let Some(stlv) = &self.sub_tlvs.spb_inst {
+            stlv.encode(buf);
+        }
         for stlv in &self.sub_tlvs.spbm_si {
             stlv.encode(buf);
         }
@@ -2811,6 +2991,9 @@ impl Tlv for MtCapabilityTlv {
     fn len(&self) -> usize {
         let mut len = TLV_HDR_SIZE + Self::MIN_SIZE;
 
+        if let Some(stlv) = &self.sub_tlvs.spb_inst {
+            len += stlv.len();
+        }
         for stlv in &self.sub_tlvs.spbm_si {
             len += stlv.len();
         }

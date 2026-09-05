@@ -34,10 +34,10 @@ use crate::packet::tlv::{
     Ipv4RouterIdTlv, Ipv6AddressesTlv, Ipv6Reach, Ipv6ReachTlv,
     Ipv6RouterIdTlv, IsReach, IsReachTlv, LegacyIpv4Reach, LegacyIpv4ReachTlv,
     LegacyIsReach, LegacyIsReachTlv, LspBufferSizeTlv, LspEntriesTlv, LspEntry,
-    MtCapabilityTlv, MtFlags, MultiTopologyEntry, MultiTopologyTlv,
-    NeighborsTlv, PaddingTlv, ProtocolsSupportedTlv, PurgeOriginatorIdTlv,
-    RouterCapTlv, TLV_HDR_SIZE, TLV_MAX_LEN, ThreeWayAdjTlv, Tlv, UnknownTlv,
-    tlv_entries_split, tlv_take_max,
+    MtCapabilityTlv, MtFlags, MtPortCapTlv, MultiTopologyEntry,
+    MultiTopologyTlv, NeighborsTlv, PaddingTlv, ProtocolsSupportedTlv,
+    PurgeOriginatorIdTlv, RouterCapTlv, TLV_HDR_SIZE, TLV_MAX_LEN,
+    ThreeWayAdjTlv, Tlv, UnknownTlv, tlv_entries_split, tlv_take_max,
 };
 use crate::packet::{
     AreaAddr, LanId, LevelNumber, LevelType, LspId, SystemId, auth,
@@ -89,6 +89,7 @@ pub struct HelloTlvs {
     pub protocols_supported: Option<ProtocolsSupportedTlv>,
     pub area_addrs: Vec<AreaAddressesTlv>,
     pub multi_topology: Vec<MultiTopologyTlv>,
+    pub mt_port_cap: Vec<MtPortCapTlv>,
     pub neighbors: Vec<NeighborsTlv>,
     pub three_way_adj: Option<ThreeWayAdjTlv>,
     pub ipv4_addrs: Vec<Ipv4AddressesTlv>,
@@ -734,6 +735,12 @@ impl Hello {
                         Err(error) => error.log(),
                     }
                 }
+                Some(TlvType::MtPortCap) => {
+                    match MtPortCapTlv::decode(tlv_len, &mut buf_tlv) {
+                        Ok(tlv) => tlvs.mt_port_cap.push(tlv),
+                        Err(error) => error.log(),
+                    }
+                }
                 _ => {
                     // Save unknown top-level TLV.
                     tlvs.unknown
@@ -802,6 +809,9 @@ impl Hello {
             for tlv in &self.tlvs.multi_topology {
                 tlv.encode(&mut buf);
             }
+            for tlv in &self.tlvs.mt_port_cap {
+                tlv.encode(&mut buf);
+            }
             for tlv in &self.tlvs.neighbors {
                 tlv.encode(&mut buf);
             }
@@ -835,6 +845,9 @@ impl Hello {
             total_tlv_len += tlv.len();
         }
         for tlv in &self.tlvs.multi_topology {
+            total_tlv_len += tlv.len();
+        }
+        for tlv in &self.tlvs.mt_port_cap {
             total_tlv_len += tlv.len();
         }
         for tlv in &self.tlvs.neighbors {
@@ -875,6 +888,7 @@ impl HelloTlvs {
         protocols_supported: impl IntoIterator<Item = u8>,
         area_addrs: impl IntoIterator<Item = AreaAddr>,
         multi_topology: impl IntoIterator<Item = MultiTopologyEntry>,
+        mt_port_cap: impl IntoIterator<Item = MtPortCapTlv>,
         neighbors: impl IntoIterator<Item = MacAddr>,
         three_way_adj: Option<ThreeWayAdjTlv>,
         ipv4_addrs: impl IntoIterator<Item = Ipv4Addr>,
@@ -887,6 +901,7 @@ impl HelloTlvs {
             )),
             area_addrs: tlv_entries_split(area_addrs),
             multi_topology: tlv_entries_split(multi_topology),
+            mt_port_cap: mt_port_cap.into_iter().collect(),
             neighbors: tlv_entries_split(neighbors),
             three_way_adj,
             ipv4_addrs: tlv_entries_split(ipv4_addrs),
@@ -895,6 +910,38 @@ impl HelloTlvs {
             padding: Default::default(),
             unknown: Default::default(),
         }
+    }
+
+    // Returns the neighbour's agreement digest, if it advertised one.
+    pub(crate) fn spb_digest(
+        &self,
+    ) -> Option<&crate::packet::subtlvs::spb::SpbDigestStlv> {
+        self.mt_port_cap
+            .iter()
+            .flat_map(|tlv| tlv.sub_tlvs.spb_digest.iter())
+            .next()
+    }
+
+    // Returns the neighbour's region identity, if it advertised one.
+    pub(crate) fn spb_mcid(
+        &self,
+    ) -> Option<&crate::packet::subtlvs::spb::SpbMcidStlv> {
+        self.mt_port_cap
+            .iter()
+            .find_map(|tlv| tlv.sub_tlvs.spb_mcid.as_ref())
+    }
+
+    // Returns the SPB ECT algorithm / Base VID pairs advertised in the
+    // MT-Port-Capability TLV, if any.
+    pub(crate) fn spb_ect_vids(
+        &self,
+    ) -> Vec<crate::packet::subtlvs::spb::EctVidTuple> {
+        self.mt_port_cap
+            .iter()
+            .filter_map(|tlv| tlv.sub_tlvs.spb_b_vid.as_ref())
+            .flat_map(|stlv| stlv.ect_vid_tuples.iter())
+            .copied()
+            .collect()
     }
 
     // Returns an iterator over all supported protocols from the TLV of type 129.

@@ -31,7 +31,10 @@ use holo_isis::packet::subtlvs::prefix::{
     Ipv4SourceRidStlv, Ipv6SourceRidStlv, PrefixAttrFlags, PrefixAttrFlagsStlv,
     PrefixSidFlags, PrefixSidStlv,
 };
-use holo_isis::packet::subtlvs::spb::{IsidEntry, IsidFlags, SpbmSiStlv};
+use holo_isis::packet::subtlvs::spb::{
+    IsidEntry, IsidFlags, SpbInstStlv, SpbmSiStlv, VlanIdTuple,
+    VlanIdTupleFlags,
+};
 use holo_isis::packet::tlv::{
     AreaAddressesTlv, DynamicHostnameTlv, Ipv4AddressesTlv, Ipv4Reach,
     Ipv4ReachStlvs, Ipv4ReachTlv, Ipv4RouterIdTlv, Ipv6AddressesTlv, Ipv6Reach,
@@ -257,6 +260,7 @@ static LSP1: Lazy<(Vec<u8>, Option<&Key>, Pdu)> = Lazy::new(|| {
                                 sid: Sid::Label(Label::new(15000)),
                             }],
                             link_msd: Some(MsdStlv::new(btreemap! { 1 => 16 })),
+                            spb_metric: None,
                             unknown: vec![],
                         },
                     }],
@@ -892,6 +896,7 @@ static LSP6_MT_CAP: Lazy<(Vec<u8>, Option<&Key>, Pdu)> = Lazy::new(|| {
                     overload: false,
                     mt_id: 0,
                     sub_tlvs: MtCapStlvs {
+                        spb_inst: None,
                         spbm_si: vec![SpbmSiStlv {
                             bmac: [0x00, 0x11, 0x22, 0x33, 0x44, 0x55],
                             base_vid: 100,
@@ -905,6 +910,117 @@ static LSP6_MT_CAP: Lazy<(Vec<u8>, Option<&Key>, Pdu)> = Lazy::new(|| {
                                 IsidEntry::new(IsidFlags::empty(), 0x010004),
                             ],
                         }],
+                        unknown: vec![],
+                    },
+                }],
+                router_cap: vec![],
+                area_addrs: vec![AreaAddressesTlv {
+                    list: vec![AreaAddr::from([0x49, 0, 0].as_slice())],
+                }],
+                multi_topology: vec![],
+                purge_originator_id: None,
+                hostname: None,
+                lsp_buf_size: None,
+                is_reach: vec![],
+                ext_is_reach: vec![],
+                mt_is_reach: vec![],
+                ipv4_addrs: vec![],
+                ipv4_internal_reach: vec![],
+                ipv4_external_reach: vec![],
+                ext_ipv4_reach: vec![],
+                mt_ipv4_reach: vec![],
+                ipv4_router_id: None,
+                ipv6_addrs: vec![],
+                ipv6_reach: vec![],
+                mt_ipv6_reach: vec![],
+                ipv6_router_id: None,
+                unknown: vec![],
+            },
+            None,
+        )),
+    )
+});
+
+static LSP7_SPB_INST: Lazy<(Vec<u8>, Option<&Key>, Pdu)> = Lazy::new(|| {
+    (
+        vec![
+            // PDU header
+            0x83, 0x1b, 0x01, 0x00, 0x12, 0x01, 0x00, 0x00,
+            // PDU length (2 bytes): 77 bytes
+            0x00, 0x4d, // Remaining lifetime: 1170
+            0x04, 0x92, // LSP ID: 0000.0000.0001.00-00
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+            // Sequence number: 0x00000007
+            0x00, 0x00, 0x00, 0x07, // Checksum
+            0xed, 0x79, // Flags: IS_TYPE1
+            0x01, // Protocols Supported TLV (Type 129)
+            0x81, 0x01, 0xcc,
+            // MT-Capability TLV (Type 144)
+            // Type: 144 (0x90), Length: 39 (0x27)
+            0x90, 0x27, // O=0, Reserved=0, MT-ID=0 (2 bytes)
+            0x00, 0x00,
+            // SPB-Inst Sub-TLV (Type 1)
+            // Type: 1, Length: 35 (0x23)
+            0x01, 0x23,
+            // CIST Root Identifier (8 bytes): 0x8000000000000001
+            0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+            // CIST External Root Path Cost (4 bytes): 0
+            0x00, 0x00, 0x00, 0x00,
+            // Bridge Priority (2 bytes): 0x8000
+            0x80, 0x00,
+            // Reserved (11 bits) + V=1 + SPSourceID (20 bits): 0x12345
+            0x00, 0x11, 0x23, 0x45, // Num of Trees: 2
+            0x02, // VLAN-ID Tuple 1: U=1, M=1, A=0
+            0xc0, // ECT-ALGORITHM: 00-80-c2-01 (the default)
+            0x00, 0x80, 0xc2, 0x01,
+            // Base VID: 4000 (0xfa0), SPVID: 0
+            0xfa, 0x00, 0x00, // VLAN-ID Tuple 2: U=1, M=1, A=1
+            0xe0, // ECT-ALGORITHM: 00-80-c2-02
+            0x00, 0x80, 0xc2, 0x02,
+            // Base VID: 4001 (0xfa1), SPVID: 100 (0x064)
+            0xfa, 0x10, 0x64, // Area Addresses TLV (Type 1)
+            0x01, 0x04, 0x03, 0x49, 0x00, 0x00,
+        ],
+        None,
+        Pdu::Lsp(Lsp::new(
+            LevelNumber::L1,
+            1170,
+            LspId::from([0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00]),
+            0x00000007,
+            LspFlags::IS_TYPE1,
+            LspTlvs {
+                auth: None,
+                protocols_supported: Some(ProtocolsSupportedTlv {
+                    list: vec![0xcc],
+                }),
+                mt_cap: vec![MtCapabilityTlv {
+                    overload: false,
+                    mt_id: 0,
+                    sub_tlvs: MtCapStlvs {
+                        spb_inst: Some(SpbInstStlv {
+                            cist_root_id: 0x8000_0000_0000_0001,
+                            cist_ext_root_path_cost: 0,
+                            bridge_priority: 0x8000,
+                            spsource_id_auto: true,
+                            spsource_id: 0x12345,
+                            vlan_id_tuples: vec![
+                                VlanIdTuple::new(
+                                    VlanIdTupleFlags::U | VlanIdTupleFlags::M,
+                                    0x0080_c201,
+                                    4000,
+                                    0,
+                                ),
+                                VlanIdTuple::new(
+                                    VlanIdTupleFlags::U
+                                        | VlanIdTupleFlags::M
+                                        | VlanIdTupleFlags::A,
+                                    0x0080_c202,
+                                    4001,
+                                    100,
+                                ),
+                            ],
+                        }),
+                        spbm_si: vec![],
                         unknown: vec![],
                     },
                 }],
@@ -1019,9 +1135,108 @@ fn test_encode_lsp6_mt_cap() {
 }
 
 #[test]
+fn test_encode_lsp7_spb_inst() {
+    let (ref bytes, ref auth, ref lsp) = *LSP7_SPB_INST;
+    test_encode_pdu(bytes, lsp, auth);
+}
+
+#[test]
+fn test_decode_lsp7_spb_inst() {
+    let (ref bytes, ref auth, ref lsp) = *LSP7_SPB_INST;
+    test_decode_pdu(bytes, lsp, auth);
+}
+
+#[test]
 fn test_decode_lsp6_mt_cap() {
     let (ref bytes, ref auth, ref lsp) = *LSP6_MT_CAP;
     test_decode_pdu(bytes, lsp, auth);
+}
+
+// Builds a minimal L1 LSP carrying a single MT-Capability TLV whose only
+// content is `stlv` (a complete Sub-TLV: type, length and value).
+#[cfg(test)]
+fn lsp_with_mt_cap_stlv(stlv: &[u8]) -> Vec<u8> {
+    let mt_cap_value_len = 2 + stlv.len();
+    let pdu_len = 27 + 2 + mt_cap_value_len;
+
+    let mut bytes = vec![
+        // Common IS-IS header.
+        0x83, 0x1b, 0x01, 0x00, 0x12, 0x01, 0x00, 0x00,
+    ];
+    bytes.extend_from_slice(&(pdu_len as u16).to_be_bytes());
+    // Remaining lifetime.
+    bytes.extend_from_slice(&1170u16.to_be_bytes());
+    // LSP ID.
+    bytes.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00]);
+    // Sequence number.
+    bytes.extend_from_slice(&4u32.to_be_bytes());
+    // Checksum (zero: skipped in testing mode).
+    bytes.extend_from_slice(&[0x00, 0x00]);
+    // Flags.
+    bytes.push(0x01);
+    // MT-Capability TLV (Type 144) with MT-ID 0.
+    bytes.push(0x90);
+    bytes.push(mt_cap_value_len as u8);
+    bytes.extend_from_slice(&[0x00, 0x00]);
+    bytes.extend_from_slice(stlv);
+    bytes
+}
+
+// Decodes an LSP and returns whether an SPB-Inst Sub-TLV was accepted.
+//
+// A malformed Sub-TLV is logged and dropped rather than failing the whole
+// PDU, so these tests assert that nothing was believed.
+#[cfg(test)]
+fn spb_inst_accepted(stlv: &[u8]) -> bool {
+    use holo_utils::bytes::Bytes;
+
+    let bytes = lsp_with_mt_cap_stlv(stlv);
+    let pdu = Pdu::decode(&mut Bytes::from(bytes), None, None).unwrap();
+    let Pdu::Lsp(lsp) = pdu else {
+        panic!("expected an LSP");
+    };
+    lsp.tlvs.mt_cap[0].sub_tlvs.spb_inst.is_some()
+}
+
+#[test]
+fn test_decode_spb_inst_valid() {
+    // 19 bytes of fixed fields declaring zero trees.
+    let mut stlv = vec![0x01, 0x13];
+    stlv.extend_from_slice(&[0x00; 8]); // CIST Root Identifier
+    stlv.extend_from_slice(&[0x00; 4]); // CIST External Root Path Cost
+    stlv.extend_from_slice(&[0x80, 0x00]); // Bridge Priority
+    stlv.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]); // SPSourceID = 1
+    stlv.push(0x00); // Num of Trees = 0
+    assert!(spb_inst_accepted(&stlv));
+}
+
+#[test]
+fn test_decode_spb_inst_too_short() {
+    // Declares 10 bytes, below the 19-byte minimum.
+    let mut stlv = vec![0x01, 0x0a];
+    stlv.extend_from_slice(&[0x00; 10]);
+    assert!(!spb_inst_accepted(&stlv));
+}
+
+#[test]
+fn test_decode_spb_inst_misaligned_tuples() {
+    // 19 fixed bytes plus 4 trailing bytes, which is not a whole number of
+    // 8-byte VLAN-ID tuples.
+    let mut stlv = vec![0x01, 0x17];
+    stlv.extend_from_slice(&[0x00; 18]);
+    stlv.push(0x01); // Num of Trees = 1
+    stlv.extend_from_slice(&[0x00; 4]);
+    assert!(!spb_inst_accepted(&stlv));
+}
+
+#[test]
+fn test_decode_spb_inst_tree_count_mismatch() {
+    // One 8-byte tuple present, but the header claims two.
+    let mut stlv = vec![0x01, 0x1b];
+    stlv.extend_from_slice(&[0x00; 18]);
+    stlv.push(0x02); // Num of Trees = 2, but only one tuple follows
+    stlv.extend_from_slice(&[0x00; 8]);
+    assert!(!spb_inst_accepted(&stlv));
 }
 
 #[test]

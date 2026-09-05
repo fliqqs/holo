@@ -56,6 +56,7 @@ pub enum TlvType {
     ExtIpv4Reach = 135,
     DynamicHostname = 137,
     Ipv6RouterId = 140,
+    MtPortCap = 143,
     MtCapability = 144,
     MtIsReach = 222,
     MultiTopology = 229,
@@ -98,6 +99,8 @@ pub enum NeighborStlvType {
     LinkMsd = 15,
     AppSpecificLinkAttr = 16,
     TeDefaultMetric = 18,
+    SpbMetric = 29,
+    SpbAOalg = 30,
     AdjacencySid = 31,
     LanAdjacencySid = 32,
     UniLinkDelay = 33,
@@ -235,6 +238,19 @@ bitflags! {
     pub struct FadFlags: u8 {
         const M = 0x80;
     }
+}
+
+// IS-IS Sub-TLVs for the MT-Port-Capability TLV (TLV 143).
+//
+// IANA registry:
+// https://www.iana.org/assignments/isis-tlv-codepoints/isis-tlv-codepoints.xhtml#tlv-143
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(FromPrimitive, ToPrimitive)]
+#[derive(Deserialize, Serialize)]
+pub enum MtPortCapStlvType {
+    SpbMcid = 4,
+    SpbDigest = 5,
+    SpbBVid = 6,
 }
 
 // IS-IS Sub-TLVs for the MT-Capability TLV (TLV 144).

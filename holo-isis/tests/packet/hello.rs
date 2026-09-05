@@ -188,6 +188,7 @@ static LAN_HELLO1: Lazy<(Vec<u8>, Option<&Key>, Pdu)> = Lazy::new(|| {
                     list: vec![AreaAddr::from([0x49, 0x00, 0x00].as_slice())],
                 }],
                 multi_topology: vec![],
+                mt_port_cap: vec![],
                 neighbors: vec![NeighborsTlv {
                     list: vec![
                         MacAddr::from([0x3e, 0x25, 0x6d, 0x6d, 0x1b, 0x25]),
@@ -383,6 +384,7 @@ static P2P_HELLO1: Lazy<(Vec<u8>, Option<&Key>, Pdu)> = Lazy::new(|| {
                         },
                     ],
                 }],
+                mt_port_cap: vec![],
                 neighbors: vec![],
                 three_way_adj: Some(ThreeWayAdjTlv {
                     state: ThreeWayAdjState::Down,
@@ -437,6 +439,7 @@ static P2P_HELLO2_CLEAR_TEXT: Lazy<(Vec<u8>, Option<&Key>, Pdu)> =
                         )],
                     }],
                     multi_topology: vec![],
+                    mt_port_cap: vec![],
                     neighbors: vec![],
                     three_way_adj: None,
                     ipv4_addrs: vec![Ipv4AddressesTlv {
@@ -482,6 +485,7 @@ static P2P_HELLO2_HMAC_MD5: Lazy<(Vec<u8>, Option<&Key>, Pdu)> =
                         )],
                     }],
                     multi_topology: vec![],
+                    mt_port_cap: vec![],
                     neighbors: vec![],
                     three_way_adj: None,
                     ipv4_addrs: vec![Ipv4AddressesTlv {
@@ -531,6 +535,7 @@ static P2P_HELLO2_HMAC_SHA256: Lazy<(Vec<u8>, Option<&Key>, Pdu)> =
                         )],
                     }],
                     multi_topology: vec![],
+                    mt_port_cap: vec![],
                     neighbors: vec![],
                     three_way_adj: None,
                     ipv4_addrs: vec![Ipv4AddressesTlv {
@@ -571,6 +576,7 @@ static P2P_HELLO3: Lazy<(Vec<u8>, Option<&Key>, Pdu)> = Lazy::new(|| {
                     list: vec![AreaAddr::from([0x49, 0x00, 0x00].as_slice())],
                 }],
                 multi_topology: vec![],
+                mt_port_cap: vec![],
                 neighbors: vec![],
                 three_way_adj: Some(ThreeWayAdjTlv {
                     state: ThreeWayAdjState::Up,
@@ -591,6 +597,203 @@ static P2P_HELLO3: Lazy<(Vec<u8>, Option<&Key>, Pdu)> = Lazy::new(|| {
         )),
     )
 });
+
+//
+// MT-Port-Capability TLV (type 143) round-trip.
+//
+// The existing Hello vectors are dominated by padding, so this exercises the
+// TLV 143 / SPB-B-VID layout directly on a minimal unpadded P2P Hello.
+//
+
+// Assembles a minimal P2P Hello carrying `tlvs` after the Protocols
+// Supported TLV.
+#[cfg(test)]
+fn p2p_hello_with_tlvs(tlvs: &[u8]) -> Vec<u8> {
+    const HDR_LEN: usize = 20;
+    let protocols_supported = [0x81, 0x02, 0xcc, 0x8e];
+    let pdu_len = HDR_LEN + protocols_supported.len() + tlvs.len();
+
+    let mut bytes = vec![
+        // Common IS-IS header.
+        0x83, 0x14, 0x01, 0x00, 0x11, 0x01, 0x00, 0x00,
+        // Circuit type.
+        0x01, // Source ID.
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x06, // Holding time.
+        0x00, 0x09,
+    ];
+    bytes.extend_from_slice(&(pdu_len as u16).to_be_bytes());
+    // Local circuit ID.
+    bytes.push(0x00);
+    bytes.extend_from_slice(&protocols_supported);
+    bytes.extend_from_slice(tlvs);
+    bytes
+}
+
+// The SPB-B-VID Sub-TLV as it appears on the wire: two ECT-VID tuples, the
+// first with U and M set on Base VID 4000, the second with only U on 4001.
+#[cfg(test)]
+const MT_PORT_CAP_TLV: &[u8] = &[
+    // MT-Port-Cap TLV: type 143 (0x8f), length 16 (0x10).
+    0x8f, 0x10, // Reserved (4 bits) + MT-ID (12 bits) = 0.
+    0x00, 0x00, // SPB-B-VID Sub-TLV: type 6, length 12 (0x0c).
+    0x06, 0x0c, // Tuple 1: ECT-ALGORITHM 00-80-c2-01.
+    0x00, 0x80, 0xc2, 0x01,
+    // Base VID 4000 (0xfa0) in the upper 12 bits, then U=1, M=1, Res=0.
+    0xfa, 0x0c, // Tuple 2: ECT-ALGORITHM 00-80-c2-02.
+    0x00, 0x80, 0xc2, 0x02,
+    // Base VID 4001 (0xfa1), U=1, M=0, Res=0.
+    0xfa, 0x18,
+];
+
+// Builds an MT-Port-Cap TLV carrying the three SPB Sub-TLVs an IIH may hold:
+// the region identity, an agreement digest and the ECT/Base-VID mappings.
+#[cfg(test)]
+fn mt_port_cap_with_digest(digest: &[u8]) -> Vec<u8> {
+    let mut mcid = vec![0x04u8, 102];
+    // Two 51-byte MCIDs: a format selector, a name, a revision and a digest.
+    // Distinct bytes so a swap of the two would show up.
+    mcid.extend(std::iter::repeat_n(0xa1, 51));
+    mcid.extend(std::iter::repeat_n(0xb2, 51));
+
+    // Res(3) | V | A(2) | D(2): valid, agreement 2, discarded 1.
+    let mut dg = vec![0x05u8, (1 + digest.len()) as u8, 0x19];
+    dg.extend_from_slice(digest);
+
+    let b_vid = vec![
+        0x06u8, 0x06, // SPB-B-VID, one 6-byte tuple
+        0x00, 0x80, 0xc2, 0x01, // ECT-ALGORITHM 00-80-c2-01
+        0xfa, 0x0c, // Base VID 4000, U and M set
+    ];
+
+    let value_len = 2 + mcid.len() + dg.len() + b_vid.len();
+    let mut tlv = vec![0x8fu8, value_len as u8, 0x00, 0x00];
+    tlv.extend_from_slice(&mcid);
+    tlv.extend_from_slice(&dg);
+    tlv.extend_from_slice(&b_vid);
+    tlv
+}
+
+#[test]
+fn test_decode_hello_spb_digest_and_mcid() {
+    use holo_utils::bytes::Bytes;
+
+    let digest = [0xde, 0xad, 0xbe, 0xef];
+    let bytes = p2p_hello_with_tlvs(&mt_port_cap_with_digest(&digest));
+    let pdu = Pdu::decode(&mut Bytes::from(bytes), None, None).unwrap();
+    let Pdu::Hello(hello) = pdu else {
+        panic!("expected a Hello");
+    };
+    let stlvs = &hello.tlvs.mt_port_cap[0].sub_tlvs;
+
+    let mcid = stlvs.spb_mcid.as_ref().expect("MCID");
+    assert_eq!(mcid.mcid, [0xa1; 51]);
+    assert_eq!(mcid.aux_mcid, [0xb2; 51]);
+
+    assert_eq!(stlvs.spb_digest.len(), 1);
+    let dg = &stlvs.spb_digest[0];
+    assert!(dg.valid);
+    assert_eq!(dg.agreement, 2);
+    assert_eq!(dg.discarded, 1);
+    assert_eq!(dg.digest, digest);
+
+    // The three Sub-TLVs coexist; parsing one must not consume another.
+    assert!(stlvs.spb_b_vid.is_some());
+}
+
+#[test]
+fn test_encode_hello_spb_digest_and_mcid() {
+    use holo_protocol::assert_eq_hex;
+    use holo_utils::bytes::Bytes;
+
+    // A round trip also confirms `len()` agrees with `encode()`, which
+    // fragmentation depends on.
+    let bytes = p2p_hello_with_tlvs(&mt_port_cap_with_digest(&[
+        0xde, 0xad, 0xbe, 0xef,
+    ]));
+    let pdu = Pdu::decode(&mut Bytes::from(bytes.clone()), None, None).unwrap();
+    assert_eq_hex!(bytes, pdu.encode(None).to_vec());
+}
+
+#[test]
+fn test_decode_hello_spb_mcid_wrong_length() {
+    use holo_utils::bytes::Bytes;
+
+    // The MCID Sub-TLV is a fixed 102 bytes. A different length is a
+    // malformed Sub-TLV, not an extension to be skipped over, so nothing is
+    // believed from it.
+    let mut mcid = vec![0x04u8, 100];
+    mcid.extend(std::iter::repeat_n(0xa1, 100));
+    let mut tlv = vec![0x8fu8, (2 + mcid.len()) as u8, 0x00, 0x00];
+    tlv.extend_from_slice(&mcid);
+
+    let bytes = p2p_hello_with_tlvs(&tlv);
+    let pdu = Pdu::decode(&mut Bytes::from(bytes), None, None).unwrap();
+    let Pdu::Hello(hello) = pdu else {
+        panic!("expected a Hello");
+    };
+    assert!(hello.tlvs.mt_port_cap[0].sub_tlvs.spb_mcid.is_none());
+}
+
+#[test]
+fn test_decode_hello_mt_port_cap() {
+    use holo_isis::packet::subtlvs::spb::EctVidFlags;
+    use holo_utils::bytes::Bytes;
+
+    let bytes = p2p_hello_with_tlvs(MT_PORT_CAP_TLV);
+    let pdu = Pdu::decode(&mut Bytes::from(bytes), None, None).unwrap();
+    let Pdu::Hello(hello) = pdu else {
+        panic!("expected a Hello");
+    };
+
+    assert_eq!(hello.tlvs.mt_port_cap.len(), 1);
+    let tlv = &hello.tlvs.mt_port_cap[0];
+    assert_eq!(tlv.mt_id, 0);
+
+    let spb_b_vid = tlv.sub_tlvs.spb_b_vid.as_ref().unwrap();
+    assert_eq!(spb_b_vid.ect_vid_tuples.len(), 2);
+
+    let first = &spb_b_vid.ect_vid_tuples[0];
+    assert_eq!(first.ect_algorithm, 0x0080_c201);
+    assert_eq!(first.base_vid, 4000);
+    assert_eq!(first.flags, EctVidFlags::U | EctVidFlags::M);
+
+    let second = &spb_b_vid.ect_vid_tuples[1];
+    assert_eq!(second.ect_algorithm, 0x0080_c202);
+    assert_eq!(second.base_vid, 4001);
+    assert_eq!(second.flags, EctVidFlags::U);
+}
+
+#[test]
+fn test_encode_hello_mt_port_cap() {
+    use holo_protocol::assert_eq_hex;
+    use holo_utils::bytes::Bytes;
+
+    // Decoding and re-encoding must reproduce the input byte for byte, which
+    // also confirms `len()` agrees with `encode()`.
+    let bytes = p2p_hello_with_tlvs(MT_PORT_CAP_TLV);
+    let pdu = Pdu::decode(&mut Bytes::from(bytes.clone()), None, None).unwrap();
+    assert_eq_hex!(bytes, pdu.encode(None).to_vec());
+}
+
+#[test]
+fn test_decode_hello_spb_b_vid_misaligned() {
+    use holo_utils::bytes::Bytes;
+
+    // A length that is not a whole number of 6-byte tuples must be rejected,
+    // leaving the Sub-TLV absent rather than partially decoded.
+    let tlv = &[
+        0x8f, 0x0b, // MT-Port-Cap, length 11
+        0x00, 0x00, // MT-ID 0
+        0x06, 0x07, // SPB-B-VID, length 7 (not a multiple of 6)
+        0x00, 0x80, 0xc2, 0x01, 0xfa, 0x0c, 0x00,
+    ];
+    let bytes = p2p_hello_with_tlvs(tlv);
+    let pdu = Pdu::decode(&mut Bytes::from(bytes), None, None).unwrap();
+    let Pdu::Hello(hello) = pdu else {
+        panic!("expected a Hello");
+    };
+    assert!(hello.tlvs.mt_port_cap[0].sub_tlvs.spb_b_vid.is_none());
+}
 
 //
 // Tests.

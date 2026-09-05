@@ -26,6 +26,7 @@ pub mod network;
 pub mod northbound;
 pub mod packet;
 pub mod route;
+pub mod spb;
 pub mod spf;
 pub mod sr;
 pub mod tasks;

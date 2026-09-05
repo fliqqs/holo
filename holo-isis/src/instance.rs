@@ -107,6 +107,8 @@ pub struct InstanceState {
     // Log of SPF runs.
     pub spf_log: VecDeque<SpfLogEntry>,
     pub spf_log_next_id: u32,
+    // SPB computation results.
+    pub spb: crate::spb::SpbState,
 }
 
 #[derive(Debug, Default)]
@@ -453,6 +455,7 @@ impl InstanceState {
             lsp_log_next_id: 0,
             spf_log: Default::default(),
             spf_log_next_id: 0,
+            spb: Default::default(),
         }
     }
 

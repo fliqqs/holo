@@ -36,6 +36,7 @@ yang5.workspace = true
 
 holo-northbound = { path = "../holo-northbound", features = ["isis"] }
 holo-protocol = { path = "../holo-protocol" }
+holo-spb = { path = "../holo-spb" }
 holo-utils = { path = "../holo-utils" }
 holo-yang = { path = "../holo-yang" }
 

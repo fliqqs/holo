@@ -11,6 +11,7 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use chrono::Utc;
+use holo_spb::digest::NeighborAgreement;
 use holo_utils::bytes::Bytes;
 use holo_utils::mac_addr::MacAddr;
 
@@ -33,7 +34,7 @@ use crate::packet::pdu::{Hello, HelloVariant, Lsp, Pdu, Snp, SnpTlvs};
 use crate::packet::tlv::{ExtendedSeqNum, ExtendedSeqNumTlv, ThreeWayAdjState};
 use crate::packet::{LanId, LevelNumber, LevelType, LspId};
 use crate::spf::SpfType;
-use crate::{adjacency, flooding, spf};
+use crate::{adjacency, flooding, spb, spf};
 
 // ===== Network PDU receipt =====
 
@@ -209,6 +210,29 @@ fn process_pdu_hello(
         return Err(error);
     }
 
+    // A Hello may have brought a neighbour's agreement digest, which is the
+    // only thing that can lift the gate on multicast forwarding. Recompute
+    // only when the verdict actually changes.
+    // A digest computed since the Hello tasks started is not being
+    // advertised yet, so give them the current one.
+    spb::refresh_hellos(instance, &mut arenas.interfaces);
+
+    if spb::reevaluate_agreement(
+        instance,
+        &arenas.interfaces,
+        &arenas.adjacencies,
+    ) {
+        for level in instance.config.levels() {
+            spb::recompute(
+                level,
+                instance,
+                &arenas.interfaces,
+                &arenas.adjacencies,
+                &arenas.lsp_entries,
+            );
+        }
+    }
+
     Ok(())
 }
 
@@ -333,6 +357,14 @@ fn process_pdu_hello_lan(
     adj.neighbors = hello.tlvs.neighbors().cloned().collect();
     adj.ipv4_addrs = hello.tlvs.ipv4_addrs().cloned().collect();
     adj.ipv6_addrs = hello.tlvs.ipv6_addrs().cloned().collect();
+    adj.spb_ect_vids = hello.tlvs.spb_ect_vids();
+    adj.spb_agreement = hello.tlvs.spb_digest().map(|stlv| NeighborAgreement {
+        digest: stlv.digest.clone(),
+        agreement: stlv.agreement,
+        discarded: stlv.discarded,
+        valid: stlv.valid,
+    });
+    adj.spb_mcid = hello.tlvs.spb_mcid().cloned();
     if let Some(ext_seqnum) = ext_seqnum {
         adj.ext_seqnum.insert(hello.hdr.pdu_type, ext_seqnum);
     }
@@ -537,6 +569,14 @@ fn process_pdu_hello_p2p(
     }
     adj.ipv4_addrs = hello.tlvs.ipv4_addrs().cloned().collect();
     adj.ipv6_addrs = hello.tlvs.ipv6_addrs().cloned().collect();
+    adj.spb_ect_vids = hello.tlvs.spb_ect_vids();
+    adj.spb_agreement = hello.tlvs.spb_digest().map(|stlv| NeighborAgreement {
+        digest: stlv.digest.clone(),
+        agreement: stlv.agreement,
+        discarded: stlv.discarded,
+        valid: stlv.valid,
+    });
+    adj.spb_mcid = hello.tlvs.spb_mcid().cloned();
     if let Some(ext_seqnum) = ext_seqnum {
         adj.ext_seqnum.insert(hello.hdr.pdu_type, ext_seqnum);
     }

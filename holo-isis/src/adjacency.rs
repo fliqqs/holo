@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use chrono::Utc;
 use derive_new::new;
+use holo_spb::digest::NeighborAgreement;
 use holo_utils::bfd;
 use holo_utils::ip::{AddressFamilies, AddressFamily};
 use holo_utils::mac_addr::MacAddr;
@@ -25,9 +26,11 @@ use crate::collections::AdjacencyId;
 use crate::debug::Debug;
 use crate::instance::InstanceUpView;
 use crate::interface::{Interface, InterfaceType};
+use crate::northbound::configuration::InstanceCfg;
 use crate::northbound::notification;
 use crate::packet::iana::{Nlpid, PduType};
 use crate::packet::subtlvs::neighbor::{AdjSidFlags, AdjSidStlv};
+use crate::packet::subtlvs::spb::{EctVidTuple, SpbMcidStlv};
 use crate::packet::tlv::{ExtendedSeqNum, ThreeWayAdjState};
 use crate::packet::{AreaAddr, LanId, LevelType, SystemId};
 use crate::{sr, tasks};
@@ -53,6 +56,14 @@ pub struct Adjacency {
     pub ipv6_addrs: BTreeSet<Ipv6Addr>,
     pub bfd: AddressFamilies<Option<AdjacencyBfd>>,
     pub adj_sids: Vec<AdjacencySid>,
+    /// ECT algorithm and Base VID pairs the neighbor advertises in the
+    /// SPB-B-VID Sub-TLV of its Hellos. Under stable conditions these should
+    /// match the local ones, so a difference is a configuration error.
+    pub spb_ect_vids: Vec<EctVidTuple>,
+    /// The neighbour's agreement digest, from its SPB-Digest Sub-TLV.
+    pub spb_agreement: Option<NeighborAgreement>,
+    /// The neighbour's region identity, from its SPB-MCID Sub-TLV.
+    pub spb_mcid: Option<SpbMcidStlv>,
     pub last_uptime: Option<Instant>,
     pub holdtimer: Option<TimeoutTask>,
 }
@@ -119,6 +130,9 @@ impl Adjacency {
             ipv6_addrs: Default::default(),
             bfd: Default::default(),
             adj_sids: Default::default(),
+            spb_ect_vids: Default::default(),
+            spb_agreement: None,
+            spb_mcid: None,
             last_uptime: None,
             holdtimer: None,
         };
@@ -355,24 +369,20 @@ impl Adjacency {
     }
 
     // Returns whether the neighbor supports SPB (advertised NLPID 0xC1 in Hello).
-    #[allow(dead_code)]
     pub(crate) fn is_spb_capable(&self) -> bool {
         self.protocols_supported.contains(&(Nlpid::Spb as u8))
     }
 
-    // Returns whether the adjacency has bidirectional SPB capability.
+    // Returns whether the adjacency has bidirectional SPB capability, i.e.
+    // whether both ends advertise NLPID 0xC1 in the Protocols Supported TLV
+    // (TLV 129) of their Hellos.
     //
-    // Per RFC 6329, SPB adjacency formation requires both sides to advertise
-    // NLPID 0xC1 in the Protocols Supported TLV (TLV 129) of Hello PDUs.
-    // This method returns true only when:
-    // 1. Local SPB is enabled (we advertise NLPID 0xC1)
-    // 2. The neighbor also advertises NLPID 0xC1
-    #[allow(dead_code)]
-    pub(crate) fn is_spb_bidirectional(
-        &self,
-        instance: &InstanceUpView<'_>,
-    ) -> bool {
-        instance.config.spb.enabled && self.is_spb_capable()
+    // Note that this does not gate adjacency formation: Holo forms an
+    // ordinary IS-IS adjacency regardless, and it is the absence of the
+    // SPB-Metric Sub-TLV that keeps a non-SPB adjacency from carrying SPB
+    // traffic.
+    pub(crate) fn is_spb_bidirectional(&self, cfg: &InstanceCfg) -> bool {
+        cfg.spb.enabled && self.is_spb_capable()
     }
 }
 

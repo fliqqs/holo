@@ -1,0 +1,270 @@
+//
+// Copyright (c) The Holo Core Contributors
+//
+// SPDX-License-Identifier: MIT
+//
+
+syntax = "proto3";
+
+package spb.dataplane;
+
+// The interface between an SPB control plane and a forwarding dataplane.
+//
+// The control plane is the client and the dataplane the server, so the
+// dataplane can be restarted independently and the control plane will
+// reconnect and resynchronise.
+service SpbDataplane {
+  // Long-lived bidirectional session carrying configuration and forwarding
+  // updates downstream, and acknowledgements and events upstream.
+  rpc Session(stream ControlMsg) returns (stream DataplaneMsg) {}
+
+  // Reads the datapath counters.
+  rpc GetStats(StatsRequest) returns (StatsReply) {}
+
+  // Dumps the current forwarding tables, for `spb-dp show`.
+  rpc Dump(DumpRequest) returns (DumpReply) {}
+}
+
+//
+// Session messages, control plane to dataplane.
+//
+message ControlMsg {
+  oneof msg {
+    Hello hello = 1;
+    NodeConfig node_config = 2;
+    PortConfig port_config = 3;
+    FdbDelta fdb_delta = 4;
+    Commit commit = 5;
+    TraceConfig trace_config = 6;
+  }
+}
+
+// Opens the session and states the control plane's generation, so the
+// dataplane can tell whether its own state is current.
+message Hello {
+  // Monotonic generation of the control plane's forwarding state.
+  uint64 generation = 1;
+  // Informational.
+  string control_plane = 2;
+}
+
+// This node's backbone identity.
+message NodeConfig {
+  // 6 bytes.
+  bytes b_mac = 1;
+  // 20-bit SPSourceID.
+  uint32 spsource_id = 2;
+}
+
+// The role of one interface. Sent once per port, and again when it changes.
+message PortConfig {
+  enum Role {
+    ROLE_UNSPECIFIED = 0;
+    // Customer-facing: encapsulate on ingress.
+    UNI = 1;
+    // Backbone-facing: ingress-check, then decapsulate, forward or replicate.
+    NNI = 2;
+  }
+
+  string ifname = 1;
+  Role role = 2;
+  // Service this customer port belongs to; unset for backbone ports.
+  uint32 i_sid = 3;
+  // Base VID this port's traffic is carried on.
+  uint32 b_vid = 4;
+}
+
+// An incremental change to the forwarding tables.
+//
+// Entries are addressed by key and applied idempotently, so a delta may be
+// replayed safely. A snapshot replaces all previous state: the dataplane
+// stamps each entry with the generation and sweeps whatever the snapshot did
+// not refresh.
+message FdbDelta {
+  uint64 generation = 1;
+  bool snapshot = 2;
+
+  repeated UnicastEntry unicast_added = 3;
+  repeated UnicastKey unicast_removed = 4;
+  repeated MulticastEntry multicast_added = 5;
+  repeated MulticastKey multicast_removed = 6;
+  repeated ServiceEntry services_added = 7;
+  repeated uint32 services_removed = 8;
+}
+
+message UnicastKey {
+  uint32 b_vid = 1;
+  // 6 bytes.
+  bytes b_mac = 2;
+}
+
+message UnicastEntry {
+  UnicastKey key = 1;
+  // System ID of the adjacent node to forward through; empty when the B-MAC
+  // is this node's own, which means decapsulate.
+  bytes nexthop_system_id = 2;
+  // Name of the egress interface; empty for a local B-MAC.
+  string out_ifname = 3;
+  uint32 cost = 4;
+}
+
+message MulticastKey {
+  uint32 b_vid = 1;
+  // 6 bytes: the group B-DA formed from the source's SPSourceID and the I-SID.
+  bytes group_bmac = 2;
+}
+
+message MulticastEntry {
+  MulticastKey key = 1;
+  uint32 i_sid = 2;
+  // System ID of the node rooting this distribution tree.
+  bytes source_system_id = 3;
+  // Whether this node also decapsulates and delivers to its own customer
+  // ports.
+  bool local_deliver = 4;
+  // Interfaces to replicate onto: the local node's children on the tree.
+  repeated string out_ifnames = 5;
+}
+
+message ServiceEntry {
+  uint32 i_sid = 1;
+  uint32 b_vid = 2;
+  // The T bit. When set, transit nodes hold multicast state for this node's
+  // distribution tree and it floods to a group address (tandem replication).
+  // When clear, this node must send one unicast copy per member instead
+  // (head-end replication).
+  bool transmit = 3;
+  bool receive = 4;
+  // Customer-facing interfaces belonging to this service.
+  repeated string uni_ifnames = 5;
+  // B-MACs of the remote nodes in this service, for head-end replication.
+  repeated bytes member_bmacs = 6;
+}
+
+// Ends a batch. The dataplane applies pending writes and acknowledges the
+// generation; after a snapshot it also sweeps stale entries.
+message Commit {
+  uint64 generation = 1;
+}
+
+// Per-frame tracing. Drops are always counted, whether traced or not.
+message TraceConfig {
+  // Sample one in every N eligible frames; zero disables per-frame tracing.
+  uint32 sample_rate = 1;
+  // Bitmask of enabled event kinds.
+  uint32 event_mask = 2;
+}
+
+//
+// Session messages, dataplane to control plane.
+//
+message DataplaneMsg {
+  oneof msg {
+    DataplaneHello hello = 1;
+    Ack ack = 2;
+    Nack nack = 3;
+    ResyncRequest resync_request = 4;
+    Event event = 5;
+  }
+}
+
+message DataplaneHello {
+  // Generation the dataplane last committed; zero after a restart, which
+  // tells the control plane to send a full snapshot.
+  uint64 generation = 1;
+  string version = 2;
+  // Interfaces the dataplane can attach to.
+  repeated string interfaces = 3;
+}
+
+message Ack {
+  uint64 generation = 1;
+  uint32 entries_programmed = 2;
+}
+
+message Nack {
+  uint64 generation = 1;
+  string reason = 2;
+}
+
+// Asks for a full snapshot, e.g. after the dataplane loses map state.
+message ResyncRequest {
+  string reason = 1;
+}
+
+// A sampled datapath event.
+message Event {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    ENCAP = 1;
+    DECAP = 2;
+    TRANSIT = 3;
+    REPLICATE = 4;
+    INGRESS_CHECK_DROP = 5;
+    CMAC_LEARNED = 6;
+    DROP = 7;
+  }
+
+  Kind kind = 1;
+  int64 timestamp_ns = 2;
+  string in_ifname = 3;
+  string out_ifname = 4;
+  uint32 i_sid = 5;
+  uint32 b_vid = 6;
+  bytes b_da = 7;
+  bytes b_sa = 8;
+  bytes c_da = 9;
+  bytes c_sa = 10;
+  // For a drop, the name of the counter that was incremented.
+  string reason = 11;
+}
+
+//
+// Stats and dump.
+//
+message StatsRequest {}
+
+message StatsReply {
+  // Counter name to value.
+  map<string, uint64> counters = 1;
+  uint64 generation = 2;
+  uint32 unicast_entries = 3;
+  uint32 multicast_entries = 4;
+  uint32 service_entries = 5;
+  uint32 cmac_entries = 6;
+}
+
+message DumpRequest {
+  enum Table {
+    TABLE_UNSPECIFIED = 0;
+    UNICAST = 1;
+    MULTICAST = 2;
+    SERVICE = 3;
+    CMAC = 4;
+    PORTS = 5;
+  }
+  Table table = 1;
+}
+
+message DumpReply {
+  repeated UnicastEntry unicast = 1;
+  repeated MulticastEntry multicast = 2;
+  repeated ServiceEntry services = 3;
+  repeated CMacEntry cmacs = 4;
+  repeated PortConfig ports = 5;
+}
+
+// A learned customer MAC.
+//
+// A remote address is bound to the backbone address that carried it, which is
+// what lets the return frame be addressed; a local one is bound to its port.
+message CMacEntry {
+  uint32 i_sid = 1;
+  // 6 bytes.
+  bytes c_mac = 2;
+  // 6 bytes; empty for a locally attached address.
+  bytes b_mac = 3;
+  // Set for a locally attached address.
+  string ifname = 4;
+  uint64 age_ns = 5;
+}

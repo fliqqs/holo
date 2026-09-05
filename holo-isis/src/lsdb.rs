@@ -50,7 +50,10 @@ use crate::packet::subtlvs::prefix::{
     Ipv6SourceRidStlv, PrefixAttrFlags, PrefixAttrFlagsStlv, PrefixSidFlags,
     PrefixSidStlv,
 };
-use crate::packet::subtlvs::spb::{IsidEntry, IsidFlags, SpbmSiStlv};
+use crate::packet::subtlvs::spb::{
+    IsidEntry, IsidFlags, SpbInstStlv, SpbMetricStlv, SpbmSiStlv, VlanIdTuple,
+    VlanIdTupleFlags,
+};
 use crate::packet::tlv::{
     IpReachTlvEntry, Ipv4Reach, Ipv4ReachStlvs, Ipv6Reach, Ipv6ReachStlvs,
     IsReach, IsReachStlvs, LegacyIpv4Reach, LegacyIsReach, MAX_NARROW_METRIC,
@@ -527,13 +530,25 @@ fn lsp_build_tlvs_router_cap(
     }
 }
 
+// IEEE 802.1 OUI, occupying the top 24 bits of a standard ECT-ALGORITHM.
+const ECT_ALGORITHM_OUI_IEEE8021: u32 = 0x00_80_c2;
+
+// Returns this node's BridgeID: the Bridge Priority followed by the System ID.
+fn spb_bridge_id(priority: u16, instance: &InstanceUpView<'_>) -> u64 {
+    let mut bytes = [0u8; 8];
+    bytes[..2].copy_from_slice(&priority.to_be_bytes());
+    bytes[2..].copy_from_slice(instance.config.system_id.unwrap().as_ref());
+    u64::from_be_bytes(bytes)
+}
+
 fn lsp_build_tlvs_mt_cap(
     instance: &InstanceUpView<'_>,
     mt_cap: &mut Vec<MtCapabilityTlv>,
 ) {
-    // Only build MT-Capability TLVs if SPB is enabled and services are
-    // configured.
-    if !instance.config.spb.enabled || instance.config.spb.services.is_empty() {
+    // The MT-Capability TLV is only advertised when SPB is enabled. Unlike
+    // the service sub-TLVs, SPB-Inst is advertised even with no services
+    // configured, since it carries this node's SPSourceID and tree sets.
+    if !instance.config.spb.enabled {
         return;
     }
 
@@ -565,11 +580,51 @@ fn lsp_build_tlvs_mt_cap(
         spbm_si_stlvs.push(spbm_si);
     }
 
+    // Build the SPB-Inst Sub-TLV.
+    let spb_cfg = &instance.config.spb;
+    let vlan_id_tuples = spb_cfg
+        .trees
+        .iter()
+        .map(|(&base_vid, tree_cfg)| {
+            let mut flags = VlanIdTupleFlags::U;
+            if tree_cfg.multicast {
+                flags.insert(VlanIdTupleFlags::M);
+            }
+            if tree_cfg.spvid.is_some() {
+                flags.insert(VlanIdTupleFlags::A);
+            }
+            VlanIdTuple {
+                flags,
+                ect_algorithm: ECT_ALGORITHM_OUI_IEEE8021 << 8
+                    | tree_cfg.algorithm as u32,
+                base_vid,
+                spvid: tree_cfg.spvid.unwrap_or(0),
+            }
+        })
+        .collect();
+
+    // Holo does not participate in MSTP, so the region's CIST root is this
+    // node itself and the external root path cost is zero.
+    let bridge_id = spb_bridge_id(spb_cfg.bridge_priority, instance);
+
+    let spb_inst = SpbInstStlv {
+        cist_root_id: bridge_id,
+        cist_ext_root_path_cost: 0,
+        bridge_priority: spb_cfg.bridge_priority,
+        spsource_id_auto: spb_cfg.spsource_id_auto,
+        // A configured SPSourceID is advertised as-is. When auto-allocating,
+        // zero is advertised until the allocation completes, which is what
+        // RFC 6329 reserves the value for.
+        spsource_id: spb_cfg.spsource_id.unwrap_or(0),
+        vlan_id_tuples,
+    };
+
     // Create MT-Capability TLV with standard topology and no overload.
     let mt_cap_tlv = MtCapabilityTlv {
         overload: false,
         mt_id: MtId::Standard as u16,
         sub_tlvs: MtCapStlvs {
+            spb_inst: Some(spb_inst),
             spbm_si: spbm_si_stlvs,
             unknown: vec![],
         },
@@ -936,6 +991,9 @@ fn lsp_build_is_reach_lan_stlvs(
         lsp_build_is_reach_asla_stlvs(instance, iface, &mut sub_tlvs);
     }
 
+    // Add SPB-Metric Sub-TLV.
+    lsp_build_is_reach_spb_stlv(instance, iface, &mut sub_tlvs);
+
     sub_tlvs
 }
 
@@ -970,7 +1028,30 @@ fn lsp_build_is_reach_p2p_stlvs(
         lsp_build_is_reach_asla_stlvs(instance, iface, &mut sub_tlvs);
     }
 
+    // Add SPB-Metric Sub-TLV.
+    lsp_build_is_reach_spb_stlv(instance, iface, &mut sub_tlvs);
+
     sub_tlvs
+}
+
+// Adds the SPB-Metric Sub-TLV for an adjacency.
+//
+// Its presence is what makes an adjacency eligible to carry SPB traffic, so
+// it is emitted only when SPB is enabled both instance-wide and on the
+// interface.
+fn lsp_build_is_reach_spb_stlv(
+    instance: &InstanceUpView<'_>,
+    iface: &Interface,
+    sub_tlvs: &mut IsReachStlvs,
+) {
+    if !instance.config.spb.enabled || !iface.config.spb.enabled {
+        return;
+    }
+
+    sub_tlvs.spb_metric = Some(SpbMetricStlv {
+        metric: iface.config.spb.link_metric,
+        port_ids: iface.config.spb.port_ids.iter().copied().collect(),
+    });
 }
 
 fn lsp_build_is_reach_asla_stlvs(

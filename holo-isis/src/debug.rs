@@ -69,6 +69,13 @@ pub enum Debug<'a> {
     SpfMaxPathMetric(&'a Vertex, &'a VertexEdge, u32),
     SpfMissingProtocolsTlv(&'a Vertex),
     SpfUnsupportedProtocol(&'a Vertex, AddressFamily),
+    // SPB
+    SpbComputeFinish(usize, usize, usize, Duration),
+    SpbTreesSkipped(usize),
+    SpbFdbDelta(usize, bool),
+    SpbDigestChanged(u8),
+    SpbDigestMismatch(SystemId, &'a str),
+    SpbMulticastWithheld(usize),
     // Internal bus
     IbusRx(&'a IbusMsg),
 }
@@ -235,6 +242,35 @@ impl Debug<'_> {
                 // Parent span(s): isis-instance:spf
                 debug!(vertex = %vertex.id.lan_id.to_yang(), "{}", self);
             }
+            Debug::SpbComputeFinish(
+                trees,
+                unicast,
+                multicast,
+                run_duration,
+            ) => {
+                // Parent span(s): isis-instance
+                debug!(%trees, unicast_entries = %unicast, multicast_entries = %multicast, run_duration_ns = %run_duration.as_nanos(), "{}", self);
+            }
+            Debug::SpbTreesSkipped(count) => {
+                // Parent span(s): isis-instance
+                debug!(%count, "{}", self);
+            }
+            Debug::SpbFdbDelta(entries, snapshot) => {
+                // Parent span(s): isis-instance
+                debug!(%entries, %snapshot, "{}", self);
+            }
+            Debug::SpbDigestChanged(agreement) => {
+                // Parent span(s): isis-instance
+                debug!(agreement_number = %agreement, "{}", self);
+            }
+            Debug::SpbDigestMismatch(neighbor, reason) => {
+                // Parent span(s): isis-instance
+                debug!(neighbor = %neighbor.to_yang(), %reason, "{}", self);
+            }
+            Debug::SpbMulticastWithheld(trees) => {
+                // Parent span(s): isis-instance
+                debug!(%trees, "{}", self);
+            }
             Debug::SpfUnsupportedProtocol(vertex, protocol) => {
                 // Parent span(s): isis-instance:spf
                 debug!(vertex = %vertex.id.lan_id.to_yang(), %protocol, "{}", self);
@@ -347,6 +383,24 @@ impl std::fmt::Display for Debug<'_> {
             }
             Debug::SpfMissingProtocolsTlv(..) => {
                 write!(f, "missing protocols TLV")
+            }
+            Debug::SpbComputeFinish(..) => {
+                write!(f, "finished SPB computation")
+            }
+            Debug::SpbTreesSkipped(..) => {
+                write!(f, "SPB tree limit reached")
+            }
+            Debug::SpbFdbDelta(..) => {
+                write!(f, "sending SPB forwarding update")
+            }
+            Debug::SpbDigestChanged(..) => {
+                write!(f, "agreement digest changed")
+            }
+            Debug::SpbDigestMismatch(..) => {
+                write!(f, "neighbor does not agree")
+            }
+            Debug::SpbMulticastWithheld(..) => {
+                write!(f, "withholding multicast state pending agreement")
             }
             Debug::SpfUnsupportedProtocol(..) => {
                 write!(f, "unsupported protocol")

@@ -35,7 +35,7 @@ use crate::packet::subtlvs::prefix::{PrefixAttrFlags, PrefixSidStlv};
 use crate::packet::tlv::IpReachTlvEntry;
 use crate::packet::{LanId, LevelNumber, LevelType, LspId, SystemId};
 use crate::route::Route;
-use crate::{flooding, route, sr, tasks};
+use crate::{flooding, route, spb, sr, tasks};
 
 // Maximum size of the SPF log record.
 const SPF_LOG_MAX_SIZE: usize = 32;
@@ -799,6 +799,10 @@ fn compute_spf(
 
     // Update the local RIB and global RIB.
     route::update_rib(level, new_rib, instance, interfaces);
+
+    // Recompute SPB state. A topology change that affects IS-IS routing
+    // affects SPB trees too, and the LSDB is settled at this point.
+    spb::recompute(level, instance, interfaces, adjacencies, lsp_entries);
 
     // If this is an L1 LSP in an L1/L2 router, schedule LSP reorigination at L2
     // to propagate updates. This happens only after SPF, as the SPT tree is

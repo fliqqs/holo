@@ -301,6 +301,29 @@ pub(crate) fn net_tx(
     }
 }
 
+// Relays SPB forwarding updates to the dataplane.
+//
+// In production this owns the gRPC session to the dataplane agent and
+// reconciles with it; under test it hands each update to the test framework
+// so it lands in the golden output.
+#[cfg(not(feature = "testing"))]
+pub(crate) fn spb_dataplane(
+    socket: std::path::PathBuf,
+    mut fdb_rxc: UnboundedReceiver<holo_spb::dataplane::DataplaneUpdate>,
+) -> Task<()> {
+    let span1 = debug_span!("spb");
+    let _span1_guard = span1.enter();
+    let span2 = debug_span!("dataplane");
+    let _span2_guard = span2.enter();
+
+    Task::spawn(
+        async move {
+            holo_spb::dataplane::run(socket, &mut fdb_rxc).await;
+        }
+        .in_current_span(),
+    )
+}
+
 // Send periodic IS-IS Hello PDUs.
 pub(crate) fn hello_interval(
     iface: &Interface,

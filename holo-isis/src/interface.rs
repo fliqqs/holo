@@ -12,6 +12,8 @@ use std::sync::Arc;
 use std::sync::atomic::{self, AtomicU32};
 
 use chrono::{DateTime, Utc};
+use holo_spb::ect::EctAlgorithm;
+use holo_spb::topology::EctVid;
 use holo_utils::ip::{AddrList, AddressFamily};
 use holo_utils::mac_addr::MacAddr;
 use holo_utils::socket::{AsyncFd, Socket, SocketExt};
@@ -31,9 +33,12 @@ use crate::northbound::configuration::InterfaceCfg;
 use crate::northbound::notification;
 use crate::packet::iana::{MtId, Nlpid, PduType};
 use crate::packet::pdu::{Hello, HelloTlvs, HelloVariant, Lsp, Pdu};
+use crate::packet::subtlvs::spb::{
+    EctVidFlags, EctVidTuple, SpbBVidStlv, SpbDigestStlv, SpbMcidStlv,
+};
 use crate::packet::tlv::{
-    ExtendedSeqNum, LspEntry, MtFlags, MultiTopologyEntry, ThreeWayAdjState,
-    ThreeWayAdjTlv,
+    ExtendedSeqNum, LspEntry, MtFlags, MtPortCapStlvs, MtPortCapTlv,
+    MultiTopologyEntry, ThreeWayAdjState, ThreeWayAdjTlv,
 };
 use crate::packet::{LanId, LevelNumber, LevelType, Levels, LspId, SystemId};
 use crate::tasks::messages::output::NetTxPduMsg;
@@ -616,6 +621,10 @@ impl Interface {
             protocols_supported.push(Nlpid::Spb as u8);
         }
 
+        // Generate the MT-Port-Capability TLV carrying SPB's per-port
+        // Sub-TLVs. RFC 6329 always uses MT ID 0 for these.
+        let mt_port_cap = self.generate_hello_mt_port_cap(instance);
+
         // Generate Hello PDU.
         let ext_seqnum = self.ext_seqnum_next(level);
         Hello::new(
@@ -628,6 +637,7 @@ impl Interface {
                 protocols_supported,
                 area_addrs,
                 multi_topology,
+                mt_port_cap,
                 neighbors,
                 three_way_adj,
                 ipv4_addrs,
@@ -635,6 +645,88 @@ impl Interface {
                 ext_seqnum,
             ),
         )
+    }
+
+    // Builds the MT-Port-Capability TLV (type 143) for this interface.
+    //
+    // Only the SPB-B-VID Sub-TLV is emitted so far; SPB-MCID and SPB-Digest
+    // follow once the region identity and agreement digest are implemented.
+    fn generate_hello_mt_port_cap(
+        &self,
+        instance: &InstanceUpView<'_>,
+    ) -> Vec<MtPortCapTlv> {
+        if !instance.config.spb.enabled || !self.config.spb.enabled {
+            return vec![];
+        }
+
+        let view = instance.state.spb.view.as_ref();
+        let ect_vid_tuples = instance
+            .config
+            .spb
+            .trees
+            .iter()
+            .map(|(&base_vid, tree_cfg)| {
+                let algorithm = EctAlgorithm::from_index(tree_cfg.algorithm)
+                    .unwrap_or(holo_spb::ect::ECT_ALG_DEFAULT);
+                let ect_vid = EctVid {
+                    base_vid,
+                    algorithm,
+                    spvid: tree_cfg.spvid,
+                    multicast: tree_cfg.multicast,
+                };
+
+                let mut flags = EctVidFlags::empty();
+                // The Use-Flag reflects usage across the whole region, not
+                // just locally, so it is taken from the topology view rather
+                // than from configuration.
+                if view.is_some_and(|view| view.ect_vid_in_use(&ect_vid)) {
+                    flags.insert(EctVidFlags::U);
+                }
+                if tree_cfg.multicast {
+                    flags.insert(EctVidFlags::M);
+                }
+
+                EctVidTuple {
+                    ect_algorithm: algorithm.0,
+                    base_vid,
+                    flags,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        if ect_vid_tuples.is_empty() {
+            return vec![];
+        }
+
+        // The region identity, so a neighbour configured for a different
+        // region can be told from one that merely disagrees about the
+        // topology.
+        let cfg = &instance.config.spb;
+        let spb_mcid = Some(SpbMcidStlv::from_parts(
+            &cfg.region.name,
+            cfg.region.revision,
+            &cfg.region.config_digest,
+        ));
+
+        // Our agreement digest, which gates updates to multicast forwarding
+        // at both ends of this adjacency.
+        let agreement = &instance.state.spb.agreement;
+        let spb_digest = vec![SpbDigestStlv {
+            valid: agreement.valid,
+            agreement: agreement.agreement,
+            discarded: agreement.discarded,
+            digest: agreement.digest.clone(),
+        }];
+
+        vec![MtPortCapTlv {
+            mt_id: MtId::Standard as u16,
+            sub_tlvs: MtPortCapStlvs {
+                spb_mcid,
+                spb_digest,
+                spb_b_vid: Some(SpbBVidStlv { ect_vid_tuples }),
+                unknown: vec![],
+            },
+        }]
     }
 
     pub(crate) fn hello_interval_start(
